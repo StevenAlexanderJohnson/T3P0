@@ -161,7 +161,6 @@ impl DataRequest for u32 {
         output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32;
         output = output | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
         output = output ^ (1 << Bits::P2Turn as u32);
-        println!("{:#034b}", output);
         output
     }
 }
