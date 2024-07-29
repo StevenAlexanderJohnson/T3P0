@@ -1,4 +1,4 @@
-use crate::request::Request;
+use crate::request::DataRequest;
 
 struct GameState {
     board: [u8; 9],
@@ -17,10 +17,10 @@ trait GameStateTrait {
 impl GameStateTrait for GameState {
     fn new() -> Self {
         GameState {
-            board: [0u8; 9],
             turn: 0,
-            message_number: 0,
             p2_turn: true,
+            message_number: 0,
+            board: [0u8; 9],
         }
     }
 
@@ -99,7 +99,7 @@ mod test {
 
     #[test]
     fn test_from_request() {
-        let r = u32::new_request(true);
+        let r = u32::new_data_request(true);
         let gs = GameState::from_request(r);
         assert!(gs.is_some());
 
@@ -112,7 +112,7 @@ mod test {
 
     #[test]
     fn test_from_request_p2_turn() {
-        let mut r = u32::new_request(false);
+        let mut r = u32::new_data_request(false);
         r = r ^ (1 << Bits::P2Turn as u32) | (1 << Bits::MessageNumber as u32) | (1 << Bits::TurnOffset as u32);
         let gs = GameState::from_request(r);
         assert!(gs.is_some());

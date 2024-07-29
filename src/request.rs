@@ -1,44 +1,32 @@
-// Going to use a binary format for the request/response protocol.
-
 // A 32 bit unsigned integer is going to be used to represent the request/response.
 
 // There are nine spots in a tic tac toe board, so 9 bits are needed to represent the board.
-
-// Four bits can represent the current turn number.
-
-// There needs to be a way to number the requests so to avoid retry attacks.
-// That's going to take at least four bits to represent 9 turns.
+// The board is going to be represented as a grid as follows
+//  0 | 1 | 2
+// -----------
+//  3 | 4 | 5
+// -----------
+//  6 | 7 | 8
+// The nubmers represent the bit offset from the least significant bit.
+// For example, 0x000000001 is the top left corner and 0x100000000 is the bottom right corner.
 
 // How do we represent the board state if there are three possible states, empty, X, and O?
 // The server should send the board state as the opponent sees it.
 
-// That means that there are two message types:
-// The user sending their move to the server, and the server sending the board state to the user.
-
-// The board is going to be represented as a grid as follows
-//  0 | 1 | 2 
-// -----------
-//  3 | 4 | 5 
-// -----------
-//  6 | 7 | 8 
-// The nubmers represent the bit offset from the least significant bit.
-// For example, 0x000000001 is the top left corner and 0x100000000 is the bottom right corner.
-
-
 /// |----|--------------|
-/// | 1  | Message Type |
+/// | 1  | Message Type | There are two possible message types. Data and Ok.
 /// |----|--------------|
 /// | 2  | Turn Number  |
-/// | 3  |              |
-/// | 4  |              |
+/// | 3  |              | Turn number uses 4 buts for a max of 16 possible moves.
+/// | 4  |              | It only takes 9 at max for a game but 3 bits is too few.
 /// | 5  |              |
 /// |----|--------------|
 /// | 6  | Is P2 Turn   |
 /// |----|--------------|
 /// | 7  |Message Number|
 /// | 8  |              |
-/// | 9  |              |
-/// | 10 |              |
+/// | 9  |              | 5 bits gives (2^5)-1 possible moves which is 31 possible moves.
+/// | 10 |              | This opens the possibility of best of 3s which will use at most 27.
 /// | 11 |              |
 /// |----|--------------|
 /// | 12 | Unused       |
@@ -55,13 +43,13 @@
 /// | 23 |              |
 /// |----|--------------|
 /// | 24 | Board State  |
-/// | 25 |              |
-/// | 26 |              |
-/// | 27 |              |
-/// | 28 |              |
-/// | 29 |              |
-/// | 30 |              |
-/// | 31 |              |
+/// | 25 |              | 0 | 1 | 2
+/// | 26 |              | ---------
+/// | 27 |              | 3 | 4 | 5
+/// | 28 |              | ---------
+/// | 29 |              | 6 | 7 | 8
+/// | 30 |              | See note above the diagram that describes how this board
+/// | 31 |              | is represented.
 /// | 32 |              |
 /// |----|--------------|
 
@@ -84,39 +72,77 @@ pub enum Ranges {
     Turn = 4u32,
 }
 
-pub trait Request {
-    fn new_request(from_server: bool) -> Self;
+pub trait DataRequest {
+    fn new_data_request(is_ok_response: bool) -> Self;
     fn swap_player(&self) -> Self;
     fn get_turn(&self) -> u8;
     fn get_message_number(&self) -> u8;
     fn get_board_state(&self) -> u16;
     fn get_is_p2_turn(&self) -> bool;
+    fn increment_turn_and_message(&self) -> u32;
 }
 
-impl Request for u32 {
-    fn new_request(from_server: bool) -> Self {
-        if from_server {
+impl DataRequest for u32 {
+    /// Creates a new u32 with formatted Ok response if chosen.
+    /// If `is_ok_response` is not true then it simply returns 0.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_ok_response` - A boolean to represent if this should be initialized as an Ok response.
+    ///
+    /// # Returns
+    ///
+    /// * `u32` - A response u32 with possibly initialized values.
+    fn new_data_request(is_ok_response: bool) -> Self {
+        if is_ok_response {
             return Bits::MessageType as u32;
         }
         0
     }
 
+    /// Gets the turn value from the u32 request.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - A u8 that represents the current turn value.
     fn get_turn(&self) -> u8 {
         ((self >> Bits::TurnOffset as u32) & (1 << Ranges::Turn as u32) - 1) as u8
     }
 
+    /// Gets the board state from the u32 request.
+    ///
+    /// # Returns
+    ///
+    /// * `u16` - A u16 that represents the current board state.
+    /// It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
     fn get_board_state(&self) -> u16 {
         (self & (1 << Ranges::Board as u32) - 1) as u16
     }
 
+    /// Gets whether it's the second player's turn.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - A boolean that is true if it's player 2's turn and false if it's player 1.
     fn get_is_p2_turn(&self) -> bool {
         (self >> Bits::P2Turn as u32) & 1 == 1
     }
-    
+
+    /// Gets the current message number.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - A `u8` that holds the number of messages that have passed.
+    /// Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8 {
         ((self >> Bits::MessageNumber as u32) & (1 << Ranges::MessageNumber as u32) - 1) as u8
     }
-    
+
+    /// Switches the bit that represents whose turn it is and flips the state of the board.
+    ///
+    /// # Returns
+    ///
+    /// * `u32` - A new u32 that represents the exact board state but it's flipped to the other users view.
     fn swap_player(&self) -> u32 {
         let mut output = *self;
         for i in 0..Ranges::Board as usize {
@@ -125,8 +151,18 @@ impl Request for u32 {
         output = output ^ (1 << Bits::P2Turn as u32);
         output
     }
-}
 
+    fn increment_turn_and_message(&self) -> u32 {
+        let turn = self.get_turn();
+        let message_number = self.get_message_number();
+        // First clear out that set of bits then | that number plus 1
+        let mut output = self ^ (u32::from(turn) << u32::from(Bits::TurnOffset as u32)) as u32
+            | ((u32::from(turn) + 1) << u32::from(Bits::TurnOffset as u32)) as u32;
+        output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32
+            | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
+        output
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -134,13 +170,13 @@ mod tests {
 
     #[test]
     fn test_new_request() {
-        let r = u32::new_request(false);
+        let r = u32::new_data_request(false);
         assert_eq!(r, 0);
     }
 
     #[test]
     fn test_new_request_from_server() {
-        let r = u32::new_request(true);
+        let r = u32::new_data_request(true);
         assert_eq!(r, Bits::MessageType as u32);
     }
 
@@ -272,7 +308,7 @@ mod tests {
         let message_number = r.get_message_number();
         assert_eq!(message_number, 31);
 
-        let r = 0b11111 << (Bits::MessageNumber as u32 - 1); 
+        let r = 0b11111 << (Bits::MessageNumber as u32 - 1);
         let message_number = r.get_message_number();
         assert_eq!(message_number, 15);
     }
@@ -300,5 +336,17 @@ mod tests {
         let swapped = r.swap_player();
         // If the only bit that was 1 was the player turn but, then it should be 0 and the board should be all 1s.
         assert_eq!(swapped, (1 << Ranges::Board as u32) - 1);
+    }
+
+    #[test]
+    fn increment_turn_and_message() {
+        let r = u32::new_data_request(false);
+        let incremented = r.increment_turn_and_message();
+        assert_eq!(
+            incremented,
+            (r | 1 << Bits::MessageNumber as u32
+                | 1 << Bits::TurnOffset as u32
+                | 1 << Bits::P2Turn as u32)
+        )
     }
 }
