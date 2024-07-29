@@ -156,10 +156,12 @@ impl DataRequest for u32 {
         let turn = self.get_turn();
         let message_number = self.get_message_number();
         // First clear out that set of bits then | that number plus 1
-        let mut output = self ^ (u32::from(turn) << u32::from(Bits::TurnOffset as u32)) as u32
-            | ((u32::from(turn) + 1) << u32::from(Bits::TurnOffset as u32)) as u32;
-        output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32
-            | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
+        let mut output = self ^ (u32::from(turn) << u32::from(Bits::TurnOffset as u32)) as u32;
+        output = output | (u32::from(turn) + 1) << u32::from(Bits::TurnOffset as u32) as u32;
+        output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32;
+        output = output | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
+        output = output ^ (1 << Bits::P2Turn as u32);
+        println!("{:#034b}", output);
         output
     }
 }
@@ -346,6 +348,32 @@ mod tests {
             incremented,
             (r | 1 << Bits::MessageNumber as u32
                 | 1 << Bits::TurnOffset as u32
+                | 1 << Bits::P2Turn as u32)
+        )
+    }
+
+    #[test]
+    fn increment_turn_and_message_twice() {
+        let r = u32::new_data_request(false);
+        let incremented = r.increment_turn_and_message();
+        let incremented = incremented.increment_turn_and_message();
+        assert_eq!(
+            incremented,
+            (r | 2 << Bits::MessageNumber as u32
+                | 2 << Bits::TurnOffset as u32)
+        )
+    }
+
+    #[test]
+    fn increment_turn_and_message_three_times() {
+        let r = u32::new_data_request(false);
+        let incremented = r.increment_turn_and_message();
+        let incremented = incremented.increment_turn_and_message();
+        let incremented = incremented.increment_turn_and_message();
+        assert_eq!(
+            incremented,
+            (r | 3 << Bits::MessageNumber as u32
+                | 3 << Bits::TurnOffset as u32
                 | 1 << Bits::P2Turn as u32)
         )
     }
