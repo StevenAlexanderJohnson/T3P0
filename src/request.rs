@@ -25,7 +25,7 @@
 /// |----|--------------|
 /// | 7  |Message Number|
 /// | 8  |              |
-/// | 9  |              | 5 bits gives (2^5)-1 possible moves which is 31 possible moves.
+/// | 9  |              | 5 bits can represent up to 32 possible moves.
 /// | 10 |              | This opens the possibility of best of 3s which will use at most 27.
 /// | 11 |              |
 /// |----|--------------|
@@ -56,12 +56,10 @@
 #[derive(Debug)]
 #[repr(u32)]
 pub enum Bits {
-    // 5 bits represent the message number, supporting up to 31 messages.
     MessageNumber = 21u32,
     P2Turn = 26u32,
-    // 4 bits represent the turn number. Supporting up to 15 turns, but only 9 are needed to end a game.
     TurnOffset = 27u32,
-    MessageType = 1u32 << 31,
+    MessageType = 31u32,
 }
 
 #[derive(Debug)]
@@ -96,7 +94,7 @@ impl DataRequest for u32 {
     /// * `u32` - A response u32 with possibly initialized values.
     fn new_data_request(is_ok_response: bool) -> Self {
         if is_ok_response {
-            return Bits::MessageType as u32;
+            return 1 << Bits::MessageType as u32;
         }
         0
     }
@@ -235,7 +233,7 @@ mod tests {
     #[test]
     fn test_new_request_from_server() {
         let r = u32::new_data_request(true);
-        assert_eq!(r, Bits::MessageType as u32);
+        assert_eq!(r, 1 << Bits::MessageType as u32);
     }
 
     #[test]
