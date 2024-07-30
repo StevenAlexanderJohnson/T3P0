@@ -55,7 +55,7 @@
 
 #[derive(Debug)]
 #[repr(u32)]
-pub enum Bits {
+enum Bits {
     // 5 bits represent the message number, supporting up to 31 messages.
     MessageNumber = 21u32,
     P2Turn = 26u32,
@@ -66,7 +66,7 @@ pub enum Bits {
 
 #[derive(Debug)]
 #[repr(u32)]
-pub enum Ranges {
+enum Ranges {
     Board = 9u32,
     MessageNumber = 5u32,
     Turn = 4u32,
