@@ -74,6 +74,7 @@ pub enum Ranges {
 
 pub trait DataRequest {
     fn new_data_request(is_ok_response: bool) -> Self;
+    fn validate_request(&self) -> Result<(), &'static str>;
     fn swap_player(&self) -> Self;
     fn get_turn(&self) -> u8;
     fn get_message_number(&self) -> u8;
@@ -152,6 +153,22 @@ impl DataRequest for u32 {
         output
     }
 
+    /// Increments the turn and message number by 1.
+    /// If the message number is at 27, then it will return an error.
+    /// If the turn is at 9, then it will reset the turn to 0.
+    /// If the message number is less than the turn, then it will return an error.
+    /// 
+    /// # Returns
+    /// 
+    /// * `Result<Self, &'static str>` - A result that is either the new request or an error message.
+    /// 
+    /// # Errors
+    /// 
+    /// * `&'static str` - An error message that describes why the request is invalid.
+    /// 
+    /// # Returns
+    /// 
+    /// * `Result<Self, &'static str>` - A result that is either the new request or an error message.
     fn increment_turn_and_message(&self) -> Result<Self, &'static str> {
         let turn = self.get_turn();
         let message_number = self.get_message_number();
@@ -165,6 +182,39 @@ impl DataRequest for u32 {
         output = output | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
         output = output ^ (1 << Bits::P2Turn as u32);
         Ok(output)
+    }
+    
+    /// Validates the request to make sure that the turn and message number are in sync.
+    /// 
+    /// # Returns
+    /// 
+    /// * `Result<(), &'static str>` - A result that is either an empty result or an error message.
+    /// 
+    /// # Errors
+    /// 
+    /// * `&'static str` - An error message that describes why the request is invalid.
+    fn validate_request(&self) -> Result<(), &'static str> {
+        if self.get_message_number() >= 27 {
+            return Err("Trying to increment message number past maximum value.");
+        }
+
+        if self.get_turn() >= 9 {
+            return Err("Trying to increment turn number past maximum value.");
+        }
+
+        if self.get_message_number() < self.get_turn() {
+            return Err("Message number is less than turn number.");
+        }
+        println!("Turn: {}, Message: {}", self.get_turn(), self.get_message_number());
+        if self.get_message_number() % 9 != self.get_turn() {
+            return Err("Turn number and message number are not in sync.");
+        }
+
+        if self.get_message_number() % 2 == 0 && self.get_is_p2_turn() {
+            return Err("Player 2 is trying to make a move on player 1's turn.");
+        }
+
+        Ok(())
     }
 }
 
@@ -419,5 +469,57 @@ mod tests {
             };
         }
         assert!(r.increment_turn_and_message().is_err());
+    }
+
+    #[test]
+    fn validate_request() {
+        let r = u32::new_data_request(false);
+        assert!(r.validate_request().is_ok());
+    }
+
+    #[test]
+    fn validate_request_bad_turn() {
+        let r = u32::new_data_request(false);
+        let r = r | 1 << Bits::TurnOffset as u32;
+        assert!(r.validate_request().is_err());
+        let r = r | 9 << Bits::TurnOffset as u32;
+        assert!(r.validate_request().is_err());
+    }
+
+    #[test]
+    fn validate_request_bad_message() {
+        let r = u32::new_data_request(false);
+        let r = r | 27 << Bits::MessageNumber as u32;
+        assert!(r.validate_request().is_err());
+    }
+
+    #[test]
+    fn validate_request_bad_player_turn() {
+        let r = u32::new_data_request(false);
+        let r = r | 1 << Bits::P2Turn as u32;
+        assert!(r.validate_request().is_err());
+    }
+
+    #[test]
+    fn validate_request_turn_greater_than_message() {
+        let r = u32::new_data_request(false);
+        let r = r | 1 << Bits::TurnOffset as u32;
+        assert!(r.validate_request().is_err());
+    }
+
+    #[test]
+    fn validate_request_correct_player_turn() {
+        let r = u32::new_data_request(false);
+        let r = r | 1 << Bits::P2Turn as u32 | 1 << Bits::MessageNumber as u32 | 1 << Bits::TurnOffset as u32;
+        assert!(r.validate_request().is_ok());
+    }
+    
+    #[test]
+    fn validate_request_message_mod_test() {
+        let r = u32::new_data_request(false);
+        let r1 = r | 9 << Bits::MessageNumber as u32 | 1 << Bits::P2Turn as u32;
+        assert!(r1.validate_request().is_ok());
+        let r2 = r | 10 << Bits::MessageNumber as u32 | 1 << Bits::TurnOffset as u32;
+        assert!(r2.validate_request().is_ok());
     }
 }
