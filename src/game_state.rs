@@ -70,20 +70,6 @@ impl GameStateTrait for GameState {
     /// # Returns
     /// 
     /// * `bool` - True if the boards are valid moves, false otherwise
-    /// 
-    /// # Example
-    /// 
-    /// ```
-    /// let mut gs = GameState::new();
-    /// let mut gs2 = GameState::new();
-    /// // This is false because no changes have been made, you can't pass your turn in tic tac toe
-    /// assert_eq!(gs.compare_boards(&gs2), false);
-    /// gs2.board[0] = 1;
-    /// assert_eq!(gs.compare_boards(&gs2), true);
-    /// gs.board[0] = 1;
-    /// gs2.board[0] = 2;
-    /// assert_eq!(gs.compare_boards(&gs2), false);
-    /// ```
     fn compare_boards(&self, other: &GameState) -> bool {
         let mut differences = 0;
         for i in 0..9 {
@@ -101,10 +87,9 @@ impl GameStateTrait for GameState {
 
 
 #[cfg(test)]
-mod test {
-    use crate::request::Bits;
-
-    use super::*;
+mod game_state_test {
+    use crate::game_state::{GameState, GameStateTrait};
+    use crate::request::{DataRequest, Bits};
 
     #[test]
     fn test_new() {

@@ -55,7 +55,7 @@
 
 #[derive(Debug)]
 #[repr(u32)]
-enum Bits {
+pub enum Bits {
     // 5 bits represent the message number, supporting up to 31 messages.
     MessageNumber = 21u32,
     P2Turn = 26u32,
