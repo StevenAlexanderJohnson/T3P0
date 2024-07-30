@@ -214,6 +214,10 @@ impl DataRequest for u32 {
             return Err("Player 2 is trying to make a move on player 1's turn.");
         }
 
+        if self.get_message_number() % 2 == 1 && !self.get_is_p2_turn() {
+            return Err("Player 1 is trying to make a move on player 2's turn.");
+        }
+
         Ok(())
     }
 }
@@ -497,6 +501,10 @@ mod tests {
     fn validate_request_bad_player_turn() {
         let r = u32::new_data_request(false);
         let r = r | 1 << Bits::P2Turn as u32;
+        assert!(r.validate_request().is_err());
+
+        let r = u32::new_data_request(false);
+        let r = r | 1 << Bits::MessageNumber as u32 | 1 << Bits::TurnOffset as u32;
         assert!(r.validate_request().is_err());
     }
 
