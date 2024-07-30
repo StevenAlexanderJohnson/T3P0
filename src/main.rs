@@ -21,4 +21,18 @@ fn main() {
 
     let board_state = r.get_board_state();
     println!("{:#034b}, {}", board_state, board_state);
+
+    let mut r = u32::new_data_request(false);
+    println!("0: Message -> {}, Turn -> {}, {:#034b}", r.get_message_number(), r.get_turn(), r);
+    for i in 0..29 {
+        r = match r.increment_turn_and_message() {
+            Ok(r) => r,
+            Err(e) => {
+                println!("{}", e);
+                break;
+            }
+        };
+
+        println!("{}: Message -> {}, Turn -> {}, {:#034b}", i+1, r.get_message_number(), r.get_turn(), r);
+    }
 }

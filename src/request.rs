@@ -79,7 +79,7 @@ pub trait DataRequest {
     fn get_message_number(&self) -> u8;
     fn get_board_state(&self) -> u16;
     fn get_is_p2_turn(&self) -> bool;
-    fn increment_turn_and_message(&self) -> u32;
+    fn increment_turn_and_message(&self) -> Result<Self, &'static str> where Self: Sized;
 }
 
 impl DataRequest for u32 {
@@ -152,16 +152,19 @@ impl DataRequest for u32 {
         output
     }
 
-    fn increment_turn_and_message(&self) -> u32 {
+    fn increment_turn_and_message(&self) -> Result<Self, &'static str> {
         let turn = self.get_turn();
         let message_number = self.get_message_number();
+        if message_number + 1 >= 27 {
+            return Err("Trying to increment message number past maximum value.");
+        }
         // First clear out that set of bits then | that number plus 1
         let mut output = self ^ (u32::from(turn) << u32::from(Bits::TurnOffset as u32)) as u32;
-        output = output | (u32::from(turn) + 1) << u32::from(Bits::TurnOffset as u32) as u32;
+        output = output | (u32::from(turn) + 1) % 9 << u32::from(Bits::TurnOffset as u32) as u32;
         output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32;
         output = output | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
         output = output ^ (1 << Bits::P2Turn as u32);
-        output
+        Ok(output)
     }
 }
 
@@ -343,6 +346,8 @@ mod tests {
     fn increment_turn_and_message() {
         let r = u32::new_data_request(false);
         let incremented = r.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         assert_eq!(
             incremented,
             (r | 1 << Bits::MessageNumber as u32
@@ -355,11 +360,14 @@ mod tests {
     fn increment_turn_and_message_twice() {
         let r = u32::new_data_request(false);
         let incremented = r.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         let incremented = incremented.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         assert_eq!(
             incremented,
-            (r | 2 << Bits::MessageNumber as u32
-                | 2 << Bits::TurnOffset as u32)
+            (r | 2 << Bits::MessageNumber as u32 | 2 << Bits::TurnOffset as u32)
         )
     }
 
@@ -367,13 +375,49 @@ mod tests {
     fn increment_turn_and_message_three_times() {
         let r = u32::new_data_request(false);
         let incremented = r.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         let incremented = incremented.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         let incremented = incremented.increment_turn_and_message();
+        assert!(incremented.is_ok());
+        let incremented = incremented.unwrap();
         assert_eq!(
             incremented,
             (r | 3 << Bits::MessageNumber as u32
                 | 3 << Bits::TurnOffset as u32
                 | 1 << Bits::P2Turn as u32)
         )
+    }
+
+    #[test]
+    fn increment_turn_and_message_turn_reset() {
+        let mut r = u32::new_data_request(false);
+        for _ in 0..9 {
+            r = match r.increment_turn_and_message() {
+                Ok(r) => r,
+                Err(e) => {
+                    assert_eq!(e, "Trying to increment message number past maximum value.");
+                    break;
+                }
+            };
+        }
+        assert_eq!(r.get_turn(), 0);
+    }
+
+    #[test]
+    fn increment_turn_and_message_past_max_message() {
+        let mut r = u32::new_data_request(false);
+        for _ in 0..26 {
+            r = match r.increment_turn_and_message() {
+                Ok(r) => r,
+                Err(e) => {
+                    assert_eq!(e, "Trying to increment message number past maximum value.");
+                    break;
+                }
+            };
+        }
+        assert!(r.increment_turn_and_message().is_err());
     }
 }
