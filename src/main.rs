@@ -1,9 +1,6 @@
 use std::u32;
 
-mod request;
-mod game_state;
-
-use request::DataRequest;
+use t3p0::request::DataRequest;
 
 fn main() {
     let bitmask: u32 = u32::MAX;

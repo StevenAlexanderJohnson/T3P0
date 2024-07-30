@@ -3,5 +3,9 @@ name = "tic_tac_toe_protocol"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "t3p0"
+path = "src/lib.rs"
+
 [dependencies]
 redis = "0.26"

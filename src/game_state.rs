@@ -1,13 +1,13 @@
 use crate::request::DataRequest;
 
-struct GameState {
+pub struct GameState {
     board: [u8; 9],
     turn: u8,
     message_number: u8,
     p2_turn: bool
 }
 
-trait GameStateTrait {
+pub trait GameStateTrait {
     fn new() -> Self;
     fn from_request(request: u32) -> Result<Self, &'static str> where Self: Sized;
     fn p2_turn(&self) -> bool;
