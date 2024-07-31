@@ -1,4 +1,4 @@
-use crate::request::DataRequest;
+use crate::request::{DataRequest, Request};
 
 pub struct GameState {
     board: [u8; 9],
@@ -9,7 +9,7 @@ pub struct GameState {
 
 pub trait GameStateTrait {
     fn new() -> Self;
-    fn from_request(request: u32) -> Result<Self, &'static str> where Self: Sized;
+    fn from_request(request: Request) -> Result<Self, &'static str> where Self: Sized;
     fn p2_turn(&self) -> bool;
     fn compare_boards(&self, other: &GameState) -> bool;
 }
@@ -33,7 +33,7 @@ impl GameStateTrait for GameState {
     /// # Returns
     /// 
     /// * `Option<Self>` - A new GameState if the request is valid, None otherwise
-    fn from_request(request: u32) -> Result<Self, &'static str> {
+    fn from_request(request: Request) -> Result<Self, &'static str> {
         request.validate_request()?;
 
         let mut board = [0u8; 9];
@@ -89,7 +89,7 @@ impl GameStateTrait for GameState {
 #[cfg(test)]
 mod game_state_test {
     use crate::game_state::{GameState, GameStateTrait};
-    use crate::request::{DataRequest, Bits};
+    use crate::request::{Bits, DataRequest, Request};
 
     #[test]
     fn test_new() {
@@ -102,7 +102,7 @@ mod game_state_test {
 
     #[test]
     fn test_from_request() {
-        let r = u32::new_data_request(true);
+        let r = Request::new_data_request(true);
         let gs = GameState::from_request(r);
         assert!(gs.is_ok());
 
@@ -115,8 +115,8 @@ mod game_state_test {
 
     #[test]
     fn test_from_request_p2_turn() {
-        let mut r = u32::new_data_request(false);
-        r = r ^ (1 << Bits::P2Turn as u32) | (1 << Bits::MessageNumber as u32) | (1 << Bits::TurnOffset as u32);
+        let mut r = Request::new_data_request(false);
+        r = Request(r.0 ^ (1 << Bits::P2Turn as u32) | (1 << Bits::MessageNumber as u32) | (1 << Bits::TurnOffset as u32));
         let gs = GameState::from_request(r);
         assert!(gs.is_ok());
         let gs = gs.unwrap();
@@ -128,7 +128,7 @@ mod game_state_test {
 
     #[test]
     fn test_from_request_board_all_ones() {
-        let r = 0b111111111;
+        let r = Request(0b111111111);
         let gs = GameState::from_request(r);
         assert!(gs.is_ok());
         let gs = gs.unwrap();
@@ -140,13 +140,13 @@ mod game_state_test {
 
     #[test]
     fn test_from_request_invalid_turn() {
-        let r = (1 << Bits::TurnOffset as u32) | (1 << Bits::MessageNumber as u32);
+        let r = Request((1 << Bits::TurnOffset as u32) | (1 << Bits::MessageNumber as u32));
         let gs = GameState::from_request(r);
         assert!(gs.is_err());
     }
     #[test]
     fn test_from_request_invalid_player() {
-        let r = 1 << Bits::P2Turn as u32;
+        let r = Request(1 << Bits::P2Turn as u32);
         let gs = GameState::from_request(r);
         assert!(gs.is_err());
     }
