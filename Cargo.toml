@@ -8,4 +8,5 @@ name = "t3p0"
 path = "src/lib.rs"
 
 [dependencies]
-redis = "0.26"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.6"
