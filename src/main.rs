@@ -1,5 +1,3 @@
-use std::u32;
-
 use t3p0::request::{DataRequest, Request};
 
 fn main() {

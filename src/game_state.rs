@@ -38,12 +38,12 @@ impl GameStateTrait for GameState {
 
         let mut board = [0u8; 9];
         let board_state = request.get_board_state();
-        for i in 0..9 {
-            board[i] = (board_state >> i) as u8 & 1;
+        for (i, item) in board.iter_mut().enumerate() {
+            *item = (board_state >> i) as u8 & 1;
         }
 
         Ok(GameState {
-            board: board, 
+            board, 
             turn: request.get_turn(),
             message_number: request.get_message_number(),
             p2_turn: request.get_is_p2_turn(),

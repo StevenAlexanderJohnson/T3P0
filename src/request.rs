@@ -120,7 +120,7 @@ impl DataRequest for Request {
     ///
     /// * `u8` - A u8 that represents the current turn value.
     fn get_turn(&self) -> u8 {
-        ((self.0 >> Bits::TurnOffset as u32) & (1 << Ranges::Turn as u32) - 1) as u8
+        ((self.0 >> Bits::TurnOffset as u32) & ((1 << Ranges::Turn as u32) - 1)) as u8
     }
 
     /// Gets the board state from the u32 request.
@@ -128,9 +128,10 @@ impl DataRequest for Request {
     /// # Returns
     ///
     /// * `u16` - A u16 that represents the current board state.
-    /// It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
+    /// 
+    /// > It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
     fn get_board_state(&self) -> u16 {
-        (self.0 & (1 << Ranges::Board as u32) - 1) as u16
+        (self.0 & ((1 << Ranges::Board as u32) - 1)) as u16
     }
 
     /// Gets whether it's the second player's turn.
@@ -147,9 +148,10 @@ impl DataRequest for Request {
     /// # Returns
     ///
     /// * `u8` - A `u8` that holds the number of messages that have passed.
-    /// Messages only require 5 bits but `u8` is the smallest that fits.
+    /// 
+    /// > Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8 {
-        ((self.0 >> Bits::MessageNumber as u32) & (1 << Ranges::MessageNumber as u32) - 1) as u8
+        ((self.0 >> Bits::MessageNumber as u32) & ((1 << Ranges::MessageNumber as u32) - 1)) as u8
     }
 
     /// Switches the bit that represents whose turn it is and flips the state of the board.
@@ -160,9 +162,9 @@ impl DataRequest for Request {
     fn swap_player(&self) -> Self {
         let mut output = self.0;
         for i in 0..Ranges::Board as usize {
-            output = output ^ (1 << i);
+            output ^= 1 << i;
         }
-        output = output ^ (1 << Bits::P2Turn as u32);
+        output ^= 1 << Bits::P2Turn as u32;
         Request(output)
     }
 
@@ -189,11 +191,11 @@ impl DataRequest for Request {
             return Err("Trying to increment message number past maximum value.");
         }
         // First clear out that set of bits then | that number plus 1
-        let mut output = self.0 ^ (u32::from(turn) << u32::from(Bits::TurnOffset as u32)) as u32;
-        output = output | (u32::from(turn) + 1) % 9 << u32::from(Bits::TurnOffset as u32) as u32;
-        output = output ^ (u32::from(message_number) << Bits::MessageNumber as u32) as u32;
-        output = output | (u32::from(message_number + 1) << Bits::MessageNumber as u32) as u32;
-        output = output ^ (1 << Bits::P2Turn as u32);
+        let mut output = self.0 ^ (u32::from(turn) << Bits::TurnOffset as u32);
+        output |= ((u32::from(turn) + 1) % 9) << Bits::TurnOffset as u32;
+        output ^= u32::from(message_number) << Bits::MessageNumber as u32;
+        output |= u32::from(message_number + 1) << Bits::MessageNumber as u32;
+        output ^= 1 << Bits::P2Turn as u32;
         Ok(Request(output))
     }
 
