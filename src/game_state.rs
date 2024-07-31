@@ -1,7 +1,7 @@
 use crate::request::{DataRequest, Request};
 
-#[derive(PartialEq)]
-pub struct PlayerNumber(u32);
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct PlayerNumber(pub u32);
 
 impl PlayerNumber {
     pub fn get_player_number(&self) -> u32 {
@@ -9,6 +9,7 @@ impl PlayerNumber {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct GameState {
     players: Option<Box<[PlayerNumber; 2]>>,
     submitted_by: PlayerNumber,
