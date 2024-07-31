@@ -128,7 +128,7 @@ impl DataRequest for Request {
     /// # Returns
     ///
     /// * `u16` - A u16 that represents the current board state.
-    /// 
+    ///
     /// > It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
     fn get_board_state(&self) -> u16 {
         (self.0 & ((1 << Ranges::Board as u32) - 1)) as u16
@@ -148,7 +148,7 @@ impl DataRequest for Request {
     /// # Returns
     ///
     /// * `u8` - A `u8` that holds the number of messages that have passed.
-    /// 
+    ///
     /// > Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8 {
         ((self.0 >> Bits::MessageNumber as u32) & ((1 << Ranges::MessageNumber as u32) - 1)) as u8
@@ -537,10 +537,11 @@ mod tests {
     #[test]
     fn validate_request_correct_player_turn() {
         let r = Request::new_data_request(false);
-        let r = Request(r.0
-            | 1 << Bits::P2Turn as u32
-            | 1 << Bits::MessageNumber as u32
-            | 1 << Bits::TurnOffset as u32);
+        let r = Request(
+            r.0 | 1 << Bits::P2Turn as u32
+                | 1 << Bits::MessageNumber as u32
+                | 1 << Bits::TurnOffset as u32,
+        );
         assert!(r.validate_request().is_ok());
     }
 
