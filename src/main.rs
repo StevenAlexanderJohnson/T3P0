@@ -127,7 +127,7 @@ async fn handle_connection(
 
         if let Some(game_state) = response_rx.recv().await {
             if game_state.is_none() {
-                let game_state = GameState::new(Some(player.clone()), [player.clone(), Player::new()]);
+                let game_state = GameState::new(Some(player.clone()), None);
                 socket
                     .write(&game_state.to_request().0.to_be_bytes())
                     .await?;

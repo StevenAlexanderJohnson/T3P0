@@ -24,7 +24,7 @@ impl GameState {
 }
 
 pub trait GameStateTrait {
-    fn new(player: Option<Player>, players: [Player; 2]) -> Self;
+    fn new(player: Option<Player>, players: Option<[Player; 2]>) -> Self;
     fn from_request(request: Request, player: Player) -> Result<Self, &'static str>
     where
         Self: Sized;
@@ -34,9 +34,12 @@ pub trait GameStateTrait {
 }
 
 impl GameStateTrait for GameState {
-    fn new(player: Option<Player>, players: [Player; 2]) -> Self {
+    fn new(player: Option<Player>, players: Option<[Player; 2]>) -> Self {
         GameState {
-            players: Some(Box::from(players)),
+            players: match players {
+                Some(p) => Some(Box::new(p)),
+                None => None,
+            },
             submitted_by: match player {
                 Some(p) => p,
                 None => Player::new(),
@@ -171,7 +174,7 @@ mod game_state_test {
 
     #[test]
     fn test_new() {
-        let gs = GameState::new(None, [Player::new(), Player::new()]);
+        let gs = GameState::new(None, Some([Player::new(), Player::new()]));
         assert_eq!(gs.board, [0u8; 9]);
         assert_eq!(gs.turn, 0);
         assert_eq!(gs.message_number, 0);
@@ -235,10 +238,9 @@ mod game_state_test {
 
     #[test]
     fn test_compare_boards() {
-        let p1 = Player::new();
-        let p2 = Player::new();
-        let mut gs = GameState::new(None, [p1.clone(), p2.clone()]);
-        let mut gs2 = GameState::new(None, [p1.clone(), p2.clone()]);
+        let players = [Player::new(), Player::new()];
+        let mut gs = GameState::new(None, Some(players.clone()));
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         // This is false because no changes have been made, you can't pass your turn in tic tac toe
         assert_eq!(gs.compare_boards(&gs2), false);
         gs2.board[0] = 1;
@@ -253,13 +255,13 @@ mod game_state_test {
     #[test]
     fn test_valid_turn() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, players.clone());
+        let mut gs = GameState::new(None, Some(players.clone()));
         gs.turn = 0;
         gs.message_number = 0;
         gs.p2_turn = false;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, players.clone());
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         gs2.turn = 1;
         gs2.message_number = 1;
         gs2.p2_turn = true;
@@ -273,13 +275,13 @@ mod game_state_test {
     #[test]
     fn test_invalid_turn_number() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, players.clone());
+        let mut gs = GameState::new(None, Some(players.clone()));
         gs.turn = 2;
         gs.message_number = 1;
         gs.p2_turn = false;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, players.clone());
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
@@ -291,13 +293,13 @@ mod game_state_test {
     #[test]
     fn test_invalid_message_number() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, players.clone());
+        let mut gs = GameState::new(None, Some(players.clone()));
         gs.turn = 1;
         gs.message_number = 2;
         gs.p2_turn = false;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, players.clone());
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
@@ -309,13 +311,13 @@ mod game_state_test {
     #[test]
     fn test_invalid_same_player_turn() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, [players[0].clone(), players[1].clone()]);
+        let mut gs = GameState::new(None, Some(players.clone()));
         gs.turn = 1;
         gs.message_number = 1;
         gs.p2_turn = true;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, [players[0].clone(), players[1].clone()]);
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
@@ -327,13 +329,13 @@ mod game_state_test {
     #[test]
     fn test_invalid_submitted_by_not_player() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, players.clone());
+        let mut gs = GameState::new(None, Some(players.clone()));
         gs.turn = 1;
         gs.message_number = 1;
         gs.p2_turn = false;
         gs.submitted_by = Player::new();
 
-        let mut gs2 = GameState::new(None, players.clone());
+        let mut gs2 = GameState::new(None, Some(players.clone()));
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
