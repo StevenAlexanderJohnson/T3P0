@@ -84,7 +84,7 @@ pub trait DataRequest {
     fn is_ok_response(&self) -> bool;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Request(pub u32);
 impl PartialEq for Request {
     fn eq(&self, other: &Self) -> bool {

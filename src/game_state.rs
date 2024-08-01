@@ -17,6 +17,7 @@ pub struct GameState {
     turn: u8,
     message_number: u8,
     p2_turn: bool,
+    request: Request,
 }
 
 impl GameState {
@@ -29,6 +30,7 @@ pub trait GameStateTrait {
         Self: Sized;
     fn compare_boards(&self, other: &GameState) -> bool;
     fn validate_turn(&self, game_state: &Self) -> Result<bool, &'static str>;
+    fn to_request(&self) -> Request;
 }
 
 impl GameStateTrait for GameState {
@@ -43,6 +45,7 @@ impl GameStateTrait for GameState {
             p2_turn: true,
             message_number: 0,
             board: [0u8; 9],
+            request: Request::new_data_request(false),
         }
     }
 
@@ -71,6 +74,7 @@ impl GameStateTrait for GameState {
             turn: request.get_turn(),
             message_number: request.get_message_number(),
             p2_turn: request.get_is_p2_turn(),
+            request
         })
     }
 
@@ -153,6 +157,10 @@ impl GameStateTrait for GameState {
         }
 
         Ok(true)
+    }
+    
+    fn to_request(&self) -> Request {
+        self.request
     }
 }
 
