@@ -10,3 +10,4 @@ path = "src/lib.rs"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.6"
+uuid = { version = "1", features = ["v4"] }
