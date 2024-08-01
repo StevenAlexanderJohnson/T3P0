@@ -1,8 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
-use t3p0::{
-    request::Request, DataRequest, GameState, GameStateTrait, Player,
-    PlayerTrait,
-};
+use t3p0::{request::Request, DataRequest, GameState, GameStateTrait, Player, PlayerTrait};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -66,7 +63,8 @@ async fn handle_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = [0u8; 4];
     let mut player = Player::new();
-
+    println!("New connection: {}", socket.peer_addr()?);
+    println!("Player: {:?}", player);
     // Handshake
     for i in 0..2 {
         let n = socket.read(&mut buffer).await?;
@@ -125,27 +123,16 @@ async fn handle_connection(
         })
         .await?;
 
-        if let Some(game_state) = response_rx.recv().await {
-            if game_state.is_none() {
-                let game_state = GameState::new(Some(player.clone()), None);
+        if let Some(game_state_rec) = response_rx.recv().await {
+            if let Some(game_state) = game_state_rec {
                 socket
                     .write(&game_state.to_request().0.to_be_bytes())
                     .await?;
-                tx.send(GameRequest::UpdateState {
-                    player_id: player.clone(),
-                    new_state: game_state,
-                })
-                .await?;
+            } else {
+                socket
+                    .write(&request.0.to_be_bytes())
+                    .await?;
             }
-            tx.send(GameRequest::UpdateState {
-                player_id: player.clone(),
-                new_state: GameState::from_request(request, Player::new())?,
-            })
-            .await?;
-
-            socket
-                .write(&Request::new_data_request(true).0.to_be_bytes())
-                .await?;
         }
     }
     Ok(())
