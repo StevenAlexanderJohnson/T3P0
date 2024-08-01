@@ -81,6 +81,7 @@ pub trait DataRequest {
     fn increment_turn_and_message(&self) -> Result<Self, &'static str>
     where
         Self: Sized;
+    fn is_ok_response(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -238,6 +239,10 @@ impl DataRequest for Request {
         }
 
         Ok(())
+    }
+    
+    fn is_ok_response(&self) -> bool {
+        return self.0 & u32::MAX == 1 << Bits::MessageType as u32;
     }
 }
 
@@ -552,5 +557,19 @@ mod tests {
         assert!(r1.validate_request().is_ok());
         let r2 = Request(r.0 | 10 << Bits::MessageNumber as u32 | 1 << Bits::TurnOffset as u32);
         assert!(r2.validate_request().is_ok());
+    }
+
+    #[test]
+    fn is_ok_response() {
+        let r = Request::new_data_request(false);
+        assert_eq!(r.is_ok_response(), false);
+        let r = Request::new_data_request(true);
+        assert_eq!(r.is_ok_response(), true);
+    }
+
+    #[test]
+    fn is_ok_format_issue() {
+        let r = Request(1 << Bits::MessageType as u32 | 1);
+        assert_eq!(r.is_ok_response(), false);
     }
 }
