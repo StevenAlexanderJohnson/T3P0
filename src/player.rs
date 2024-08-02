@@ -17,7 +17,7 @@ impl PlayerTrait for Player {
     fn get_id(&self) -> &Uuid {
         &self.0
     }
-    
+
     fn from_bytes(bytes: &[u8; 16]) -> Self {
         Player(*Uuid::from_bytes_ref(bytes))
     }

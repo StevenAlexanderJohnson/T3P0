@@ -1,13 +1,7 @@
-use crate::{request::{DataRequest, Request}, Player, PlayerTrait};
-
-// #[derive(PartialEq, Debug, Clone, Copy)]
-// pub struct Player(pub u32);
-
-// impl Player {
-//     pub fn get_player_number(&self) -> u32 {
-//         self.0
-//     }
-// }
+use crate::{
+    request::{DataRequest, Request},
+    Player, PlayerTrait,
+};
 
 #[derive(Debug, Clone)]
 pub struct GameState {
@@ -20,8 +14,7 @@ pub struct GameState {
     request: Request,
 }
 
-impl GameState {
-}
+impl GameState {}
 
 pub trait GameStateTrait {
     fn new(player: Option<Player>, players: Option<[Player; 2]>) -> Self;
@@ -77,7 +70,7 @@ impl GameStateTrait for GameState {
             turn: request.get_turn(),
             message_number: request.get_message_number(),
             p2_turn: request.get_is_p2_turn(),
-            request
+            request,
         })
     }
 
@@ -161,7 +154,7 @@ impl GameStateTrait for GameState {
 
         Ok(true)
     }
-    
+
     fn to_request(&self) -> Request {
         self.request
     }
