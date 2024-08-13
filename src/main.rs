@@ -1,72 +1,23 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
-use t3p0::{request::Request, DataRequest, GameState, GameStateTrait, Player, PlayerTrait};
+use t3p0::{
+    game_server, request::Request, DataRequest, GameRequest, GameServerTrait, GameState,
+    GameStateTrait, Player, PlayerTrait,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{mpsc, oneshot, Mutex},
+    sync::mpsc,
 };
-
-#[derive(Debug)]
-enum GameRequest {
-    GetState {
-        player_id: Player,
-        response: mpsc::Sender<Option<GameState>>,
-    },
-    UpdateState {
-        player_id: Player,
-        new_state: GameState,
-    },
-}
-
-#[derive(Debug)]
-enum PlayerRequest {
-    GetPlayer {
-        response: oneshot::Sender<Option<(Player, oneshot::Sender<Player>)>>,
-    },
-    AddPlayer {
-        player: Player,
-        channel: oneshot::Sender<Player>,
-    },
-    TryRemovePlayer {
-        player: Player,
-    },
-    SendMessage {
-        player: Player,
-        message: [u8; 16],
-        response: oneshot::Sender<Option<String>>,
-    },
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:8000").await?;
+    let (tx, mut rx) = mpsc::channel::<GameRequest>(32);
+    let game_server = game_server::GameServer::new();
 
-    let (game_state_tx, mut game_state_rx) = mpsc::channel::<GameRequest>(32);
-    let game_state_map = Arc::new(Mutex::new(HashMap::<Player, GameState>::new()));
-
-    let (player_queue_tx, mut player_queue_rx) = mpsc::channel::<PlayerRequest>(32);
-    let game_queue = Arc::new(Mutex::new(Vec::<(Player, oneshot::Sender<Player>)>::new()));
-    let player_map = Arc::new(Mutex::new(HashMap::<Player, TcpStream>::new()));
-
-    let game_state_map_clone = game_state_map.clone();
+    // Create a thread that will manage the server state
     tokio::spawn(async move {
-        while let Some(request) = game_state_rx.recv().await {
-            let mut state = game_state_map_clone.lock().await;
-            match request {
-                GameRequest::GetState {
-                    player_id,
-                    response,
-                } => {
-                    let game_state = state.get(&player_id).cloned();
-                    let _ = response.send(game_state);
-                }
-                GameRequest::UpdateState {
-                    player_id,
-                    new_state,
-                } => {
-                    state.insert(player_id, new_state);
-                }
-            }
+        while let Some(request) = rx.recv().await {
+            game_server.handle_request(request).await;
         }
     });
 
@@ -251,6 +202,7 @@ async fn handle_connection(
                     .write(&game_state.to_request().0.to_be_bytes())
                     .await?;
             } else {
+                socket.write(&request.0.to_be_bytes()).await?;
                 socket.write(&request.0.to_be_bytes()).await?;
             }
         }
