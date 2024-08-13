@@ -1,11 +1,10 @@
 use t3p0::{
-    game_server, request::Request, DataRequest, GameRequest, GameServerTrait, GameState,
-    GameStateTrait, Player, PlayerTrait,
+    game_connection::{self, GameConnectionTrait},
+    game_server, GameRequest, GameServerTrait, Player, PlayerTrait,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{mpsc, oneshot},
+    sync::mpsc,
 };
 
 #[tokio::main]
@@ -80,132 +79,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn handle_connection(
-    mut socket: TcpStream,
-    game_state_tx: mpsc::Sender<GameRequest>,
-    player_queue_tx: mpsc::Sender<PlayerRequest>,
+    socket: TcpStream,
+    tx: mpsc::Sender<GameRequest>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buffer = [0u8; 4];
-    let mut player = Player::new();
-    let mut game_state = GameState::new(Some(player.clone()), None);
-    println!("New connection: {}", socket.peer_addr()?);
-    println!("Player: {:?}", player);
-
-    // Handshake
-    for i in 0..2 {
-        let n = socket.read(&mut buffer).await?;
-        if n == 0 {
-            return Err("Connection closed".into());
-        }
-
-        // Client should first send hello (or ok) message
-        // The server will assign a player number to the client.
-        // The user should then send another ok message
-        // If the player instead responds with a player id, the server will assign the player number to the client.
-        match n {
-            4 => {
-                let request = Request(u32::from_be_bytes(buffer));
-                if request.is_ok_response() {
-                    if i == 0 {
-                        socket.write(&player.get_id().into_bytes()).await?;
-                    }
-                } else {
-                    return Err("Invalid handshake Ok".into());
-                }
-            }
-            16 => {
-                if i == 0 {
-                    return Err("Invalid handshake message".into());
-                }
-                let mut uuid_buffer = [0u8; 16];
-                uuid_buffer[..4].copy_from_slice(&buffer);
-                socket.read_exact(&mut uuid_buffer[4..]).await?;
-                println!("Player requested ID: {:?}", uuid_buffer);
-                player = Player::from_bytes(&uuid_buffer);
-                socket
-                    .write(&Request::new_data_request(true).0.to_be_bytes())
-                    .await?;
-            }
-            _ => {
-                return Err("Invalid handshake message".into());
-            }
-        }
-    }
-
-    // Find an opponent or add yourself to queue.
-    let (response_tx, response_rx) =
-        oneshot::channel::<Option<(Player, oneshot::Sender<Player>)>>();
-    player_queue_tx
-        .send(PlayerRequest::GetPlayer {
-            response: response_tx,
-        })
-        .await?;
-    match response_rx.await {
-        Ok(player_rx) => {
-            if let Some(p) = player_rx {
-                println!("Found {:?} to face {:?}", p, player);
-            } else {
-                let (ready_tx, ready_rv) = oneshot::channel::<Player>();
-                player_queue_tx
-                    .send(PlayerRequest::AddPlayer {
-                        player: player.clone(),
-                        channel: ready_tx,
-                    })
-                    .await?;
-                match ready_rv.await {
-                    Ok(p2) => game_state.set_players(Some(Box::new([player.clone(), p2]))),
-                    Err(e) => {
-                        game_state.set_players(None);
-                        println!("Error getting player from ready channel: {:?}", e);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            println!("Error while receiving player to face: {:?}", e);
-            return Err("An error occurred while receiving a player to face.".into());
-        }
-    }
+    let player = Player::new();
+    let mut connection = game_connection::GameConnection::new(player, socket, tx);
+    connection.handshake().await?;
 
     // Event loop
     loop {
-        println!("Entering loop");
-
-        let n = socket.read(&mut buffer).await?;
-        if n == 0 {
-            println!("{:?} ended their connection", player);
-            player_queue_tx
-                .send(PlayerRequest::TryRemovePlayer { player })
-                .await?;
-            break;
-        }
-        if n != 4 {
-            return Err("Invalid request".into());
-        }
-
-        let request = Request(u32::from_be_bytes(buffer));
-        println!("{:?}", request);
-        // If the request is not a valid request, we break the loop
-        // If it is an ok request send an ok request back.
-        // If the user doesn't receive the ok request, they will close the connection and try again.
-
-        let (response_tx, response_rx) = oneshot::channel::<Option<GameState>>();
-        tx.send(GameRequest::GetState {
-            player_id: player.clone(),
-            response: response_tx,
-        })
-        .await?;
-
-        match response_rx.await {
-            Ok(Some(game_state)) => {
-                let _ = socket.write(&game_state.to_request().0.to_be_bytes());
-            }
-            Ok(None) => {
-                let _ = socket.write(&Request::new_data_request(false).0.to_be_bytes());
-            }
-            Err(_) => {
-                socket.write(&request.0.to_be_bytes()).await?;
-            }
-        }
+        connection.handle_request().await?;
     }
-    Ok(())
 }

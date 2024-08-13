@@ -1,10 +1,12 @@
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 
-use crate::{request::Request, DataRequest, GameRequest, Player, PlayerTrait};
+use crate::{
+    request::Request, DataRequest, GameRequest, GameState, GameStateTrait, Player, PlayerTrait,
+};
 
 pub struct GameConnection {
     player: Player,
@@ -12,9 +14,14 @@ pub struct GameConnection {
     tx: mpsc::Sender<GameRequest>,
 }
 
-trait GameConnectionTrait {
+pub trait GameConnectionTrait {
     fn new(player: Player, connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self;
-    async fn handshake(&mut self) -> Result<(), Box<dyn std::error::Error>>;
+    fn handshake(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn handle_request(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
 }
 
 impl GameConnectionTrait for GameConnection {
@@ -64,6 +71,48 @@ impl GameConnectionTrait for GameConnection {
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut buffer = [0u8; 4];
+        let n = self.connection.read(&mut buffer).await?;
+        if n == 0 {
+            return Err("Connection closed".into());
+        }
+        if n != 4 {
+            return Err("Invalid request".into());
+        }
+
+        let request = Request(u32::from_be_bytes(buffer));
+        // If the request is not a valid request, we break the loop
+        // If it is an ok request send an ok request back.
+        // If the user doesn't receive the ok request, they will close the connection and try again.
+
+        let (response_tx, response_rx) = oneshot::channel::<Option<GameState>>();
+        self.tx
+            .send(GameRequest::GetState {
+                player_id: self.player.clone(),
+                response: response_tx,
+            })
+            .await?;
+
+        match response_rx.await {
+            Ok(Some(game_state)) => {
+                let _ = self
+                    .connection
+                    .write(&game_state.to_request().0.to_be_bytes());
+            }
+            Ok(None) => {
+                let _ = self
+                    .connection
+                    .write(&Request::new_data_request(false).0.to_be_bytes());
+            }
+            Err(_) => {
+                self.connection.write(&request.0.to_be_bytes()).await?;
+            }
+        };
+
         Ok(())
     }
 }
