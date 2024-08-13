@@ -8,6 +8,14 @@ use crate::{
     request::Request, DataRequest, GameRequest, GameState, GameStateTrait, Player, PlayerTrait,
 };
 
+/// A struct that represents a connection to a game server.
+/// The connection is used to send and receive messages to and from the server.
+/// 
+/// # Fields
+/// 
+/// * `player` - The player that is connected to the server.
+/// * `connection` - The connection to the server.
+/// * `tx` - The sending channel to send requests to the main thread.
 pub struct GameConnection {
     player: Player,
     connection: TcpStream,
@@ -15,10 +23,19 @@ pub struct GameConnection {
 }
 
 pub trait GameConnectionTrait {
+    /// Create a new GameConnection
+    /// 
+    /// # Arguments
+    /// 
+    /// * `player` - The player that is connected to the server.
+    /// * `connection` - The connection to the server.
+    /// * `tx` - The sending channel to send requests to the main thread.
     fn new(player: Player, connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self;
+    /// Handles the handshake between the client and the server.
     fn handshake(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    /// Handles the request from the client.
     fn handle_request(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;

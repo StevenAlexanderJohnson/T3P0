@@ -10,6 +10,7 @@ use tokio::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:8000").await?;
+    println!("Server listening on port 8000");
     let (tx, mut rx) = mpsc::channel::<GameRequest>(32);
     let game_server = game_server::GameServer::new();
 
