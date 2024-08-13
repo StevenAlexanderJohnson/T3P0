@@ -5,7 +5,7 @@ use t3p0::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 
 #[tokio::main]
@@ -91,19 +91,21 @@ async fn handle_connection(
         // If it is an ok request send an ok request back.
         // If the user doesn't receive the ok request, they will close the connection and try again.
 
-        let (response_tx, mut response_rx) = mpsc::channel::<Option<GameState>>(1);
+        let (response_tx, response_rx) = oneshot::channel::<Option<GameState>>();
         tx.send(GameRequest::GetState {
             player_id: player.clone(),
             response: response_tx,
         })
         .await?;
 
-        if let Some(game_state_rec) = response_rx.recv().await {
-            if let Some(game_state) = game_state_rec {
-                socket
-                    .write(&game_state.to_request().0.to_be_bytes())
-                    .await?;
-            } else {
+        match response_rx.await {
+            Ok(Some(game_state)) => {
+                let _ = socket.write(&game_state.to_request().0.to_be_bytes());
+            }
+            Ok(None) => {
+                let _ = socket.write(&Request::new_data_request(false).0.to_be_bytes());
+            }
+            Err(_) => {
                 socket.write(&request.0.to_be_bytes()).await?;
             }
         }
