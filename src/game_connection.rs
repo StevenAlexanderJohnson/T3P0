@@ -184,8 +184,12 @@ impl GameConnectionTrait for GameConnection {
         println!("ME: {:?}\nOPPONENT: {:?}", self.player, opponent);
         self.game_state = Some(GameState::new(
             Some(self.player.clone()),
-            Some([self.player.clone(), opponent]),
+            Some([self.player.clone(), opponent.clone()]),
         ));
+
+        self.connection
+            .write(&opponent.get_id().into_bytes())
+            .await?;
 
         Ok(())
     }
