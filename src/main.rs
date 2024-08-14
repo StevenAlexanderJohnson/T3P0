@@ -41,7 +41,5 @@ async fn handle_connection(
     connection.handshake().await?;
 
     // Event loop
-    loop {
-        connection.handle_request().await?;
-    }
+    connection.handle_request().await
 }
