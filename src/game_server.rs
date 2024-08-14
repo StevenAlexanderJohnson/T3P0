@@ -41,12 +41,12 @@ pub trait GameServerTrait {
         new_state: GameState,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 
-    async fn get_player_from_queue(&self) -> Option<(Player, oneshot::Sender<Player>)>;
-    async fn insert_player_into_queue(
+    fn get_player_from_queue(&self) -> impl std::future::Future<Output = Option<(Player, oneshot::Sender<Player>)>> + Send;
+    fn insert_player_into_queue(
         &self,
         player: Player,
         response_channel: oneshot::Sender<Player>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 
     fn handle_request(
         &self,
