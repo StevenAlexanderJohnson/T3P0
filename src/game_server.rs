@@ -100,7 +100,6 @@ impl GameServerTrait for GameServer {
     }
 
     async fn handle_request(&self, game_request: GameRequest) {
-        println!("Handling request: {:?}", game_request);
         match game_request {
             GameRequest::GetState {
                 player_id,

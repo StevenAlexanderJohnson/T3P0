@@ -10,9 +10,9 @@ use crate::{
 
 /// A struct that represents a connection to a game server.
 /// The connection is used to send and receive messages to and from the server.
-/// 
+///
 /// # Fields
-/// 
+///
 /// * `player` - The player that is connected to the server.
 /// * `connection` - The connection to the server.
 /// * `tx` - The sending channel to send requests to the main thread.
@@ -24,9 +24,9 @@ pub struct GameConnection {
 
 pub trait GameConnectionTrait {
     /// Create a new GameConnection
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `player` - The player that is connected to the server.
     /// * `connection` - The connection to the server.
     /// * `tx` - The sending channel to send requests to the main thread.
@@ -51,7 +51,9 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn handshake(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut buffer = [0u8; 4];
+        println!("New Connection: {:?}", self.connection.peer_addr());
+        println!("Player: {:?}", self.player);
+        let mut buffer = [0u8; 16];
         for i in 0..2 {
             let n = self.connection.read(&mut buffer).await?;
             if n == 0 {
@@ -64,7 +66,10 @@ impl GameConnectionTrait for GameConnection {
             // If the player instead responds with a player id, the server will assign the player number to the client.
             match n {
                 4 => {
-                    let request = Request(u32::from_be_bytes(buffer));
+                    let request =
+                        Request(u32::from_be_bytes(buffer[..4].try_into().unwrap_or_else(
+                            |_| panic!("Failed to convert buffer to u32 {:?}", &buffer[..4]),
+                        )));
                     if i == 0 && request.is_ok_response() {
                         self.connection
                             .write(&self.player.get_id().to_bytes_le())
@@ -75,10 +80,8 @@ impl GameConnectionTrait for GameConnection {
                     if i == 0 {
                         return Err("Invalid handshake message".into());
                     }
-                    let mut uuid_buffer = [0u8; 16];
-                    uuid_buffer[..4].copy_from_slice(&buffer);
-                    self.connection.read_exact(&mut uuid_buffer[4..]).await?;
-                    self.player = Player::from_bytes(&uuid_buffer);
+                    println!("Player is requesting to join: {:?}", self.player);
+                    self.player = Player::from_bytes(&buffer);
                     self.connection
                         .write(&Request::new_data_request(true).0.to_be_bytes())
                         .await?;
