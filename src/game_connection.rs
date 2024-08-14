@@ -71,8 +71,9 @@ impl GameConnectionTrait for GameConnection {
                             |_| panic!("Failed to convert buffer to u32 {:?}", &buffer[..4]),
                         )));
                     if i == 0 && request.is_ok_response() {
+                        println!("SENDING PLAYER ID: {:?}", self.player.get_id());
                         self.connection
-                            .write(&self.player.get_id().to_bytes_le())
+                            .write(&self.player.get_id().into_bytes())
                             .await?;
                     }
                 }

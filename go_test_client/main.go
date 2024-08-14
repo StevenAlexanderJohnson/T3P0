@@ -16,12 +16,12 @@ func main() {
 	}
 	defer conn.Close()
 
-	preferredId, err := uuid.Parse("f7e0d1e9-079f-f242-a962-fe33ebabe275")
-	if err != nil {
-		panic("Unable to parse preferredId")
-	}
+	// preferredId, err := uuid.Parse("f7e0d1e9-079f-f242-a962-fe33ebabe275")
+	// if err != nil {
+	// 	panic("Unable to parse preferredId")
+	// }
 
-	uuid, err := performHandshake(conn, &preferredId)
+	uuid, err := performHandshake(conn, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -79,6 +79,7 @@ func performHandshake(connection net.Conn, preferredId *uuid.UUID) (*uuid.UUID, 
 			return nil, fmt.Errorf("server did not send a valid player id")
 		}
 		playerId = receivedUUID
+		fmt.Println("Received player id:", playerId)
 		binary.BigEndian.PutUint32(buffer[:4], uint32(1<<31))
 		connection.Write(buffer[:4])
 	}
