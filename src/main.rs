@@ -1,6 +1,6 @@
 use t3p0::{
     game_connection::{self, GameConnectionTrait},
-    game_server, GameRequest, GameServerTrait, Player, PlayerTrait,
+    game_server, GameRequest, GameServerTrait,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -36,10 +36,9 @@ async fn handle_connection(
     socket: TcpStream,
     tx: mpsc::Sender<GameRequest>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let player = Player::new();
-    let mut connection = game_connection::GameConnection::new(player, socket, tx);
+    let mut connection = game_connection::GameConnection::new(socket, tx);
     connection.handshake().await?;
-
+    connection.get_opponent_and_initialize_state().await?;
     // Event loop
     connection.handle_request().await
 }

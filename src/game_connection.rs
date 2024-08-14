@@ -19,6 +19,7 @@ use crate::{
 pub struct GameConnection {
     player: Player,
     connection: TcpStream,
+    game_state: Option<GameState>,
     tx: mpsc::Sender<GameRequest>,
 }
 
@@ -30,9 +31,12 @@ pub trait GameConnectionTrait {
     /// * `player` - The player that is connected to the server.
     /// * `connection` - The connection to the server.
     /// * `tx` - The sending channel to send requests to the main thread.
-    fn new(player: Player, connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self;
+    fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self;
     /// Handles the handshake between the client and the server.
     fn handshake(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn get_opponent_and_initialize_state(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
     /// Handles the request from the client.
@@ -42,11 +46,12 @@ pub trait GameConnectionTrait {
 }
 
 impl GameConnectionTrait for GameConnection {
-    fn new(player: Player, connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self {
+    fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self {
         GameConnection {
-            player,
             connection,
             tx,
+            player: Player::new(),
+            game_state: None,
         }
     }
 
@@ -81,7 +86,6 @@ impl GameConnectionTrait for GameConnection {
                     if i == 0 {
                         return Err("Invalid handshake message".into());
                     }
-                    println!("Player is requesting to join: {:?}", self.player);
                     self.player = Player::from_bytes(&buffer);
                     self.connection
                         .write(&Request::new_data_request(true).0.to_be_bytes())
@@ -135,5 +139,56 @@ impl GameConnectionTrait for GameConnection {
                 }
             };
         }
+    }
+
+    async fn get_opponent_and_initialize_state(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (response_tx, response_rx) =
+            oneshot::channel::<Option<(Player, oneshot::Sender<Player>)>>();
+        self.tx
+            .send(GameRequest::GetPlayerFromQueue {
+                response: response_tx,
+            })
+            .await?;
+
+        let opponent = match response_rx.await {
+            Ok(Some(player)) => {
+                // Send self to the person waiting for an opponent.
+                match player.1.send(self.player.clone()) {
+                    Ok(_) => {}
+                    Err(_) => return Err("Error sending player to opponent".into()),
+                }
+                player.0
+            }
+            Ok(None) => {
+                println!("No opponent found. Adding self to queue.");
+                let (response_tx, response_rx) = oneshot::channel::<Player>();
+
+                // Add self to the queue
+                self.tx
+                    .send(GameRequest::AddPlayerToQueue {
+                        player: self.player.clone(),
+                        response: response_tx,
+                    })
+                    .await?;
+
+                // Wait for an opponent
+                let player = match response_rx.await {
+                    Ok(player) => player,
+                    Err(_) => return Err("Error adding player to queue".into()),
+                };
+
+                player
+            }
+            Err(_) => return Err("Error getting opponent".into()),
+        };
+
+        self.game_state = Some(GameState::new(
+            Some(self.player.clone()),
+            Some([self.player.clone(), opponent]),
+        ));
+
+        Ok(())
     }
 }
