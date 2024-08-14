@@ -56,8 +56,6 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn handshake(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("New Connection: {:?}", self.connection.peer_addr());
-        println!("Player: {:?}", self.player);
         let mut buffer = [0u8; 16];
         for i in 0..2 {
             let n = self.connection.read(&mut buffer).await?;
@@ -76,7 +74,6 @@ impl GameConnectionTrait for GameConnection {
                             |_| panic!("Failed to convert buffer to u32 {:?}", &buffer[..4]),
                         )));
                     if i == 0 && request.is_ok_response() {
-                        println!("SENDING PLAYER ID: {:?}", self.player.get_id());
                         self.connection
                             .write(&self.player.get_id().into_bytes())
                             .await?;
@@ -183,7 +180,8 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return Err("Error getting opponent".into()),
         };
-
+        println!("INITIALIZING GAME STATE");
+        println!("ME: {:?}\nOPPONENT: {:?}", self.player, opponent);
         self.game_state = Some(GameState::new(
             Some(self.player.clone()),
             Some([self.player.clone(), opponent]),
