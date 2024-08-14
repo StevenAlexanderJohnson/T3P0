@@ -21,58 +21,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let game_queue_clone = game_queue.clone();
-    let player_map_clone = player_map.clone();
-    tokio::spawn(async move {
-        while let Some(player_request) = player_queue_rx.recv().await {
-            match player_request {
-                PlayerRequest::GetPlayer { response } => {
-                    let mut queue = game_queue_clone.lock().await;
-                    if queue.len() > 0 {
-                        let _ = response.send(Some(queue.remove(0)));
-                    } else {
-                        let _ = response.send(None);
-                    }
-                }
-                PlayerRequest::AddPlayer { player, channel } => {
-                    let mut queue = game_queue_clone.lock().await;
-                    println!("Adding {:?} to queue", player);
-                    queue.push((player, channel))
-                }
-                PlayerRequest::TryRemovePlayer { player } => {
-                    let mut queue = game_queue_clone.lock().await;
-                    if let Some(index) = queue.iter().position(|p| p.0 == player) {
-                        queue.remove(index);
-                    } else {
-                        panic!("Failed to remove player {:?}", player);
-                    }
-                }
-                PlayerRequest::SendMessage {
-                    player,
-                    message,
-                    response,
-                } => {
-                    let mut player_map = player_map_clone.lock().await;
-                    if let Some(player) = player_map.get_mut(&player) {
-                        let _ = match player.write(&message).await {
-                            Ok(_) => response.send(None),
-                            Err(e) => response.send(Some(e.to_string())),
-                        };
-                    } else {
-                        let _ =
-                            response.send(Some(String::from("The player request does not exist.")));
-                    }
-                }
-            }
-        }
-    });
-
     loop {
         let (socket, _) = listener.accept().await?;
-        let tx_clone = game_state_tx.clone();
-        let player_tx_clone = player_queue_tx.clone();
+        let tx_clone = tx.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(socket, tx_clone, player_tx_clone).await {
+            if let Err(e) = handle_connection(socket, tx_clone).await {
                 eprintln!("Error: {:?}", e);
             }
         });
