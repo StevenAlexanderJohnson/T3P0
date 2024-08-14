@@ -14,8 +14,6 @@ pub struct GameState {
     request: Request,
 }
 
-impl GameState {}
-
 pub trait GameStateTrait {
     fn new(player: Option<Player>, players: Option<[Player; 2]>) -> Self;
     fn from_request(request: Request, player: Player) -> Result<Self, &'static str>
@@ -24,6 +22,7 @@ pub trait GameStateTrait {
     fn compare_boards(&self, other: &GameState) -> bool;
     fn validate_turn(&self, game_state: &Self) -> Result<bool, &'static str>;
     fn to_request(&self) -> Request;
+    fn set_players(&mut self, players: Option<Box<[Player; 2]>>);
 }
 
 impl GameStateTrait for GameState {
@@ -157,6 +156,10 @@ impl GameStateTrait for GameState {
 
     fn to_request(&self) -> Request {
         self.request
+    }
+
+    fn set_players(&mut self, players: Option<Box<[Player; 2]>>) {
+        self.players = players;
     }
 }
 
