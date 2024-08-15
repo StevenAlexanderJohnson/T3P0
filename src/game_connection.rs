@@ -201,7 +201,8 @@ impl GameConnectionTrait for GameConnection {
             Some([self.player.clone(), opponent.clone()]),
         ));
 
-        let bytes_written = self.connection
+        let bytes_written = self
+            .connection
             .write(&opponent.get_id().into_bytes())
             .await?;
         if bytes_written != 16 {
