@@ -28,6 +28,22 @@ func main() {
 
 	fmt.Printf("%v\n", uuid)
 
+	buffer := make([]byte, 16)
+
+	for {
+		_, err = conn.Read(buffer)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
+		if checkOkSignal(buffer) {
+			conn.Write(buffer[:4])
+			continue
+		}
+
+		fmt.Printf("Received: %v\n", buffer)
+	}
+
 	var line string
 	fmt.Scanf(line)
 }

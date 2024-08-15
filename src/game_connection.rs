@@ -2,6 +2,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::{mpsc, oneshot},
+    time::{interval, Duration, Instant},
 };
 
 use crate::{
@@ -43,6 +44,13 @@ pub trait GameConnectionTrait {
     fn handle_request(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn cleanup(
+        &mut self,
+        message: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn send_heartbeat(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
 }
 
 impl GameConnectionTrait for GameConnection {
@@ -60,7 +68,7 @@ impl GameConnectionTrait for GameConnection {
         for i in 0..2 {
             let n = self.connection.read(&mut buffer).await?;
             if n == 0 {
-                return Err("Connection closed".into());
+                return self.cleanup(Some("Connection closed")).await;
             }
 
             // Client should first send hello (or ok) message
@@ -79,13 +87,13 @@ impl GameConnectionTrait for GameConnection {
                             .write(&self.player.get_id().into_bytes())
                             .await?;
                         if bytes_written != 16 {
-                            return Err("Failed to write player id".into());
+                            return self.cleanup(Some("Failed to write player id")).await;
                         }
                     }
                 }
                 16 => {
                     if i == 0 {
-                        return Err("Invalid handshake message".into());
+                        return self.cleanup(Some("Invalid handshake message")).await;
                     }
                     self.player = Player::from_bytes(&buffer);
                     let bytes_written = self
@@ -93,11 +101,11 @@ impl GameConnectionTrait for GameConnection {
                         .write(&Request::new_data_request(true).0.to_be_bytes())
                         .await?;
                     if bytes_written != 4 {
-                        return Err("Failed to write data request".into());
+                        return self.cleanup(Some("Failed to write data request")).await;
                     }
                 }
                 _ => {
-                    return Err("Invalid handshake message".into());
+                    return self.cleanup(Some("Invalid handshake message")).await;
                 }
             }
         }
@@ -109,10 +117,10 @@ impl GameConnectionTrait for GameConnection {
             let mut buffer = [0u8; 4];
             let n = self.connection.read(&mut buffer).await?;
             if n == 0 {
-                return Err("Connection closed".into());
+                return self.cleanup(Some("Connection closed")).await;
             }
             if n != 4 {
-                return Err("Invalid request".into());
+                return self.cleanup(Some("Invalid request")).await;
             }
 
             let request = Request(u32::from_be_bytes(buffer));
@@ -141,13 +149,13 @@ impl GameConnectionTrait for GameConnection {
                         .write(&Request::new_data_request(false).0.to_be_bytes())
                         .await?;
                     if bytes_written != 4 {
-                        return Err("Failed to write data request".into());
+                        return self.cleanup(Some("Failed to write data request")).await;
                     }
                 }
                 Err(_) => {
                     let bytes_written = self.connection.write(&request.0.to_be_bytes()).await?;
                     if bytes_written != 4 {
-                        return Err("Failed to write request".into());
+                        return self.cleanup(Some("Failed to write request")).await;
                     }
                 }
             };
@@ -169,13 +177,15 @@ impl GameConnectionTrait for GameConnection {
             Ok(Some(player)) => {
                 // Send self to the person waiting for an opponent.
                 if let Err(e) = player.1.send(self.player.clone()) {
-                    return Err(format!("Error sending player to opponent: {:?}", e).into());
+                    return self
+                        .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
+                        .await;
                 }
                 player.0
             }
             Ok(None) => {
                 println!("No opponent found. Adding self to queue.");
-                let (response_tx, response_rx) = oneshot::channel::<Player>();
+                let (response_tx, mut response_rx) = oneshot::channel::<Player>();
 
                 // Add self to the queue
                 self.tx
@@ -185,13 +195,34 @@ impl GameConnectionTrait for GameConnection {
                     })
                     .await?;
 
-                // Wait for an opponent
-                match response_rx.await {
-                    Ok(player) => player,
-                    Err(_) => return Err("Error adding player to queue".into()),
-                }
+                let mut interval = interval(Duration::from_secs(1));
+                let timeout = Duration::from_secs(5);
+                let start = Instant::now();
+
+                let opponent = loop {
+                    interval.tick().await;
+
+                    if start.elapsed() >= timeout {
+                        return self.cleanup(Some("Timeout waiting for opponent")).await;
+                    }
+
+                    match response_rx.try_recv() {
+                        Ok(player) => break player,
+                        Err(oneshot::error::TryRecvError::Empty) => {
+                            self.send_heartbeat().await?;
+                            println!("Waiting for opponent");
+                            continue;
+                        }
+                        Err(oneshot::error::TryRecvError::Closed) => {
+                            return self
+                                .cleanup(Some("Channel closed before receiving opponent"))
+                                .await;
+                        }
+                    }
+                };
+                opponent
             }
-            Err(_) => return Err("Error getting opponent".into()),
+            Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
         println!("INITIALIZING GAME STATE");
         println!("ME: {:?}\nOPPONENT: {:?}", self.player, opponent);
@@ -205,7 +236,54 @@ impl GameConnectionTrait for GameConnection {
             .write(&opponent.get_id().into_bytes())
             .await?;
         if bytes_written != 16 {
-            return Err("Failed to write opponent id".into());
+            return self.cleanup(Some("Failed to write opponent id")).await;
+        }
+
+        Ok(())
+    }
+
+    async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let (response_tx, response_rx) = oneshot::channel::<()>();
+        self.tx
+            .send(GameRequest::RemovePlayerFromQueue {
+                player: self.player.clone(),
+                response: response_tx,
+            })
+            .await
+            .unwrap_or_else(|e| println!("Error removing player from queue: {:?}", e));
+
+        match response_rx.await {
+            Ok(_) => println!("Player removed from queue"),
+            Err(e) => println!("Error removing player from queue: {:?}", e),
+        }
+
+        self.connection
+            .shutdown()
+            .await
+            .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
+
+        self.game_state = None;
+
+        match message {
+            Some(msg) => Err(msg.into()),
+            None => Ok(()),
+        }
+    }
+
+    async fn send_heartbeat(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut buffer = [0u8; 4];
+
+        self.connection
+            .write(&Request::new_data_request(true).0.to_be_bytes())
+            .await?;
+
+        let n = self.connection.read(&mut buffer).await?;
+        if n == 0 {
+            return self.cleanup(Some("Connection closed")).await;
+        }
+
+        if !Request(u32::from_be_bytes(buffer)).is_ok_response() {
+            return self.cleanup(Some("Invalid heartbeat response")).await;
         }
 
         Ok(())

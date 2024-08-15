@@ -22,6 +22,10 @@ pub enum GameRequest {
         player: Player,
         response: oneshot::Sender<Player>,
     },
+    RemovePlayerFromQueue {
+        player: Player,
+        response: oneshot::Sender<()>,
+    }
 }
 
 type PlayerQueue = Vec<(Player, oneshot::Sender<Player>)>;
@@ -129,6 +133,16 @@ impl GameServerTrait for GameServer {
             GameRequest::AddPlayerToQueue { player, response } => {
                 let _ = self.insert_player_into_queue(player, response).await;
             }
+            GameRequest::RemovePlayerFromQueue { player, response } => {
+                let mut queue = self.queue.lock().await;
+                let index = queue.iter().position(|(p, _)| p == &player);
+                if let Some(index) = index {
+                    let player = queue.remove(index);
+                    drop(player);
+                }
+
+                let _ = response.send(());
+            },
         };
     }
 }
