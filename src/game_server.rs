@@ -25,7 +25,7 @@ pub enum GameRequest {
     RemovePlayerFromQueue {
         player: Player,
         response: oneshot::Sender<()>,
-    }
+    },
 }
 
 type PlayerQueue = Vec<(Player, oneshot::Sender<Player>)>;
@@ -142,7 +142,7 @@ impl GameServerTrait for GameServer {
                 }
 
                 let _ = response.send(());
-            },
+            }
         };
     }
 }

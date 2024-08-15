@@ -199,7 +199,7 @@ impl GameConnectionTrait for GameConnection {
                 let timeout = Duration::from_secs(5);
                 let start = Instant::now();
 
-                let opponent = loop {
+                loop {
                     interval.tick().await;
 
                     if start.elapsed() >= timeout {
@@ -218,8 +218,7 @@ impl GameConnectionTrait for GameConnection {
                                 .await;
                         }
                     }
-                };
-                opponent
+                }
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
@@ -270,9 +269,13 @@ impl GameConnectionTrait for GameConnection {
     async fn send_heartbeat(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut buffer = [0u8; 4];
 
-        self.connection
+        let bytes_written = self
+            .connection
             .write(&Request::new_data_request(true).0.to_be_bytes())
             .await?;
+        if bytes_written != 4 {
+            return self.cleanup(Some("Failed to write data request")).await;
+        }
 
         let n = self.connection.read(&mut buffer).await?;
         if n == 0 {
