@@ -158,7 +158,7 @@ impl GameStateTrait for GameState {
     fn set_opponent(&mut self, opponent: Option<PlayerConnection>) {
         self.opponent = opponent;
     }
-    
+
     fn get_opponent(&self) -> Option<PlayerConnection> {
         self.opponent.clone()
     }

@@ -207,7 +207,7 @@ impl GameConnectionTrait for GameConnection {
                 let timeout = Duration::from_secs(5);
                 let start = Instant::now();
 
-                let output = loop {
+                loop {
                     interval.tick().await;
 
                     if start.elapsed() >= timeout {
@@ -216,7 +216,9 @@ impl GameConnectionTrait for GameConnection {
 
                     match self.opponent_channel.1.try_recv() {
                         Ok(response) => {
-                            if !response.to_request().is_ok_response() || response.get_opponent().is_none() {
+                            if !response.to_request().is_ok_response()
+                                || response.get_opponent().is_none()
+                            {
                                 return self
                                     .cleanup(Some("Invalid opponent was provided while connecting"))
                                     .await;
@@ -233,9 +235,7 @@ impl GameConnectionTrait for GameConnection {
                                 .await;
                         }
                     }
-                };
-
-                output
+                }
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
