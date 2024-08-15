@@ -168,9 +168,8 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             Ok(Some(player)) => {
                 // Send self to the person waiting for an opponent.
-                match player.1.send(self.player.clone()) {
-                    Ok(_) => {}
-                    Err(_) => return Err("Error sending player to opponent".into()),
+                if let Err(e) = player.1.send(self.player.clone()) {
+                    return Err(format!("Error sending player to opponent: {:?}", e).into());
                 }
                 player.0
             }
