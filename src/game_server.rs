@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{oneshot, Mutex};
 
-use crate::{GameState, Player};
+use crate::{
+    player::{PlayerConnection, PlayerConnectionTrait},
+    GameState, Player,
+};
 
 #[derive(Debug)]
 pub enum GameRequest {
@@ -16,11 +19,10 @@ pub enum GameRequest {
         response: oneshot::Sender<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
     },
     GetPlayerFromQueue {
-        response: oneshot::Sender<Option<(Player, oneshot::Sender<Player>)>>,
+        response: oneshot::Sender<Option<PlayerConnection>>,
     },
     AddPlayerToQueue {
-        player: Player,
-        response: oneshot::Sender<Player>,
+        player_connection: PlayerConnection,
     },
     RemovePlayerFromQueue {
         player: Player,
@@ -28,10 +30,8 @@ pub enum GameRequest {
     },
 }
 
-type PlayerQueue = Vec<(Player, oneshot::Sender<Player>)>;
-
 pub struct GameServer {
-    queue: Arc<Mutex<PlayerQueue>>,
+    queue: Arc<Mutex<Vec<PlayerConnection>>>,
     game_state_map_clone: Arc<Mutex<HashMap<Player, GameState>>>,
 }
 
@@ -49,11 +49,10 @@ pub trait GameServerTrait {
 
     fn get_player_from_queue(
         &self,
-    ) -> impl std::future::Future<Output = Option<(Player, oneshot::Sender<Player>)>> + Send;
+    ) -> impl std::future::Future<Output = Option<PlayerConnection>> + Send;
     fn insert_player_into_queue(
         &self,
-        player: Player,
-        response_channel: oneshot::Sender<Player>,
+        player_connection: PlayerConnection,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 
     fn handle_request(
@@ -91,7 +90,7 @@ impl GameServerTrait for GameServer {
         Ok(())
     }
 
-    async fn get_player_from_queue(&self) -> Option<(Player, oneshot::Sender<Player>)> {
+    async fn get_player_from_queue(&self) -> Option<PlayerConnection> {
         let mut queue = self.queue.lock().await;
         if queue.is_empty() {
             return None;
@@ -102,10 +101,9 @@ impl GameServerTrait for GameServer {
 
     async fn insert_player_into_queue(
         &self,
-        player: Player,
-        response_channel: oneshot::Sender<Player>,
+        player_connection: PlayerConnection,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.queue.lock().await.push((player, response_channel));
+        self.queue.lock().await.push(player_connection);
         Ok(())
     }
 
@@ -130,12 +128,12 @@ impl GameServerTrait for GameServer {
                 let player = self.get_player_from_queue().await;
                 let _ = response.send(player);
             }
-            GameRequest::AddPlayerToQueue { player, response } => {
-                let _ = self.insert_player_into_queue(player, response).await;
+            GameRequest::AddPlayerToQueue { player_connection } => {
+                let _ = self.insert_player_into_queue(player_connection).await;
             }
             GameRequest::RemovePlayerFromQueue { player, response } => {
                 let mut queue = self.queue.lock().await;
-                let index = queue.iter().position(|(p, _)| p == &player);
+                let index = queue.iter().position(|p| p.get_player() == &player);
                 if let Some(index) = index {
                     let player = queue.remove(index);
                     drop(player);
@@ -149,6 +147,8 @@ impl GameServerTrait for GameServer {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::mpsc;
+
     use crate::{GameStateTrait, PlayerTrait};
 
     use super::*;
@@ -157,10 +157,12 @@ mod tests {
     async fn test_add_player_to_queue() {
         let game_server = GameServer::new();
         // create a tokio::sync::oneshot channel
-        let (tx, _) = oneshot::channel::<Player>();
+        let (tx, _) = mpsc::channel::<GameState>(5);
 
         let player = Player::new();
-        let result = game_server.insert_player_into_queue(player, tx).await;
+        let result = game_server
+            .insert_player_into_queue(PlayerConnection::new(player, tx))
+            .await;
 
         assert!(result.is_ok());
     }
@@ -169,8 +171,10 @@ mod tests {
     async fn test_get_player_from_queue() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let (tx, _) = oneshot::channel::<Player>();
-        let result = game_server.insert_player_into_queue(player.clone(), tx).await;
+        let (tx, _) = mpsc::channel::<GameState>(5);
+        let result = game_server
+            .insert_player_into_queue(PlayerConnection::new(player.clone(), tx))
+            .await;
         assert!(result.is_ok());
 
         let player_from_queue = game_server
@@ -178,20 +182,22 @@ mod tests {
             .await
             .expect("Player not found in queue");
 
-        assert_eq!(player, player_from_queue.0);
+        assert_eq!(player, player_from_queue.get_player().clone());
     }
 
     #[tokio::test]
     async fn test_get_player_empty() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let (tx, _) = oneshot::channel::<Player>();
-        let result = game_server.insert_player_into_queue(player.clone(), tx).await;
+        let (tx, _) = mpsc::channel::<GameState>(5);
+        let result = game_server
+            .insert_player_into_queue(PlayerConnection::new(player.clone(), tx))
+            .await;
         assert!(result.is_ok());
 
         let player_from_queue = game_server.get_player_from_queue().await;
         assert!(player_from_queue.is_some());
-        assert_eq!(player, player_from_queue.unwrap().0);
+        assert_eq!(player, player_from_queue.unwrap().get_player().clone());
 
         let player_from_queue = game_server.get_player_from_queue().await;
         assert!(player_from_queue.is_none());

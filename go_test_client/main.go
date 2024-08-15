@@ -21,12 +21,12 @@ func main() {
 	// 	panic("Unable to parse preferredId")
 	// }
 
-	uuid, err := performHandshake(conn, nil)
+	id, err := performHandshake(conn, nil)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("%v\n", uuid)
+	fmt.Printf("%v\n", id)
 
 	buffer := make([]byte, 16)
 
@@ -40,12 +40,13 @@ func main() {
 			conn.Write(buffer[:4])
 			continue
 		}
-
-		fmt.Printf("Received: %v\n", buffer)
+		opponentId, err := uuid.FromBytes(buffer)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
+		fmt.Printf("Received: %v\n", opponentId)
 	}
-
-	var line string
-	fmt.Scanf(line)
 }
 
 func checkOkSignal(buffer []byte) bool {

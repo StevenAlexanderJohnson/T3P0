@@ -6,7 +6,9 @@ use tokio::{
 };
 
 use crate::{
-    request::Request, DataRequest, GameRequest, GameState, GameStateTrait, Player, PlayerTrait,
+    player::{PlayerConnection, PlayerConnectionTrait},
+    request::Request,
+    DataRequest, GameRequest, GameState, GameStateTrait, Player, PlayerTrait,
 };
 
 /// A struct that represents a connection to a game server.
@@ -22,6 +24,7 @@ pub struct GameConnection {
     connection: TcpStream,
     game_state: Option<GameState>,
     tx: mpsc::Sender<GameRequest>,
+    opponent_channel: (mpsc::Sender<GameState>, mpsc::Receiver<GameState>),
 }
 
 pub trait GameConnectionTrait {
@@ -60,6 +63,7 @@ impl GameConnectionTrait for GameConnection {
             tx,
             player: Player::new(),
             game_state: None,
+            opponent_channel: mpsc::channel::<GameState>(5),
         }
     }
 
@@ -165,8 +169,7 @@ impl GameConnectionTrait for GameConnection {
     async fn get_opponent_and_initialize_state(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (response_tx, response_rx) =
-            oneshot::channel::<Option<(Player, oneshot::Sender<Player>)>>();
+        let (response_tx, response_rx) = oneshot::channel::<Option<PlayerConnection>>();
         self.tx
             .send(GameRequest::GetPlayerFromQueue {
                 response: response_tx,
@@ -176,22 +179,27 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             Ok(Some(player)) => {
                 // Send self to the person waiting for an opponent.
-                if let Err(e) = player.1.send(self.player.clone()) {
+                let mut game_state =
+                    GameState::from_request(Request::new_data_request(true), self.player.clone())?;
+                game_state.set_opponent(Some(PlayerConnection::new(
+                    self.player.clone(),
+                    self.opponent_channel.0.clone(),
+                )));
+                if let Err(e) = player.get_channel().send(game_state).await {
                     return self
                         .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
                         .await;
                 }
-                player.0
+                player
             }
             Ok(None) => {
                 println!("No opponent found. Adding self to queue.");
-                let (response_tx, mut response_rx) = oneshot::channel::<Player>();
-
-                // Add self to the queue
                 self.tx
                     .send(GameRequest::AddPlayerToQueue {
-                        player: self.player.clone(),
-                        response: response_tx,
+                        player_connection: PlayerConnection::new(
+                            self.player.clone(),
+                            self.opponent_channel.0.clone(),
+                        ),
                     })
                     .await?;
 
@@ -199,37 +207,46 @@ impl GameConnectionTrait for GameConnection {
                 let timeout = Duration::from_secs(5);
                 let start = Instant::now();
 
-                loop {
+                let output = loop {
                     interval.tick().await;
 
                     if start.elapsed() >= timeout {
                         return self.cleanup(Some("Timeout waiting for opponent")).await;
                     }
 
-                    match response_rx.try_recv() {
-                        Ok(player) => break player,
-                        Err(oneshot::error::TryRecvError::Empty) => {
+                    match self.opponent_channel.1.try_recv() {
+                        Ok(response) => {
+                            if !response.to_request().is_ok_response() || response.get_opponent().is_none() {
+                                return self
+                                    .cleanup(Some("Invalid opponent was provided while connecting"))
+                                    .await;
+                            }
+                            break response.get_opponent().unwrap();
+                        }
+                        Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
                             continue;
                         }
-                        Err(oneshot::error::TryRecvError::Closed) => {
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
                             return self
                                 .cleanup(Some("Channel closed before receiving opponent"))
                                 .await;
                         }
                     }
-                }
+                };
+
+                output
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
         self.game_state = Some(GameState::new(
             Some(self.player.clone()),
-            Some([self.player.clone(), opponent.clone()]),
+            Some(opponent.clone()),
         ));
 
         let bytes_written = self
             .connection
-            .write(&opponent.get_id().into_bytes())
+            .write(&opponent.get_player().get_id().into_bytes())
             .await?;
         if bytes_written != 16 {
             return self.cleanup(Some("Failed to write opponent id")).await;
@@ -252,6 +269,8 @@ impl GameConnectionTrait for GameConnection {
             Ok(_) => println!("Player removed from queue"),
             Err(e) => println!("Error removing player from queue: {:?}", e),
         }
+
+        drop(self.opponent_channel.0.clone());
 
         self.connection
             .shutdown()
