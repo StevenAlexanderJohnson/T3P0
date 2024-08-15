@@ -24,8 +24,10 @@ pub enum GameRequest {
     },
 }
 
+type PlayerQueue = Vec<(Player, oneshot::Sender<Player>)>;
+
 pub struct GameServer {
-    queue: Arc<Mutex<Vec<(Player, oneshot::Sender<Player>)>>>,
+    queue: Arc<Mutex<PlayerQueue>>,
     game_state_map_clone: Arc<Mutex<HashMap<Player, GameState>>>,
 }
 
@@ -41,7 +43,9 @@ pub trait GameServerTrait {
         new_state: GameState,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 
-    fn get_player_from_queue(&self) -> impl std::future::Future<Output = Option<(Player, oneshot::Sender<Player>)>> + Send;
+    fn get_player_from_queue(
+        &self,
+    ) -> impl std::future::Future<Output = Option<(Player, oneshot::Sender<Player>)>> + Send;
     fn insert_player_into_queue(
         &self,
         player: Player,

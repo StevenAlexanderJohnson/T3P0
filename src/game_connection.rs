@@ -74,9 +74,13 @@ impl GameConnectionTrait for GameConnection {
                             |_| panic!("Failed to convert buffer to u32 {:?}", &buffer[..4]),
                         )));
                     if i == 0 && request.is_ok_response() {
-                        self.connection
+                        let bytes_written = self
+                            .connection
                             .write(&self.player.get_id().into_bytes())
                             .await?;
+                        if bytes_written != 16 {
+                            return Err("Failed to write player id".into());
+                        }
                     }
                 }
                 16 => {
@@ -84,9 +88,13 @@ impl GameConnectionTrait for GameConnection {
                         return Err("Invalid handshake message".into());
                     }
                     self.player = Player::from_bytes(&buffer);
-                    self.connection
+                    let bytes_written = self
+                        .connection
                         .write(&Request::new_data_request(true).0.to_be_bytes())
                         .await?;
+                    if bytes_written != 4 {
+                        return Err("Failed to write data request".into());
+                    }
                 }
                 _ => {
                     return Err("Invalid handshake message".into());
@@ -124,15 +132,23 @@ impl GameConnectionTrait for GameConnection {
                 Ok(Some(game_state)) => {
                     let _ = self
                         .connection
-                        .write(&game_state.to_request().0.to_be_bytes());
+                        .write(&game_state.to_request().0.to_be_bytes())
+                        .await?;
                 }
                 Ok(None) => {
-                    let _ = self
+                    let bytes_written = self
                         .connection
-                        .write(&Request::new_data_request(false).0.to_be_bytes());
+                        .write(&Request::new_data_request(false).0.to_be_bytes())
+                        .await?;
+                    if bytes_written != 4 {
+                        return Err("Failed to write data request".into());
+                    }
                 }
                 Err(_) => {
-                    self.connection.write(&request.0.to_be_bytes()).await?;
+                    let bytes_written = self.connection.write(&request.0.to_be_bytes()).await?;
+                    if bytes_written != 4 {
+                        return Err("Failed to write request".into());
+                    }
                 }
             };
         }
@@ -171,12 +187,10 @@ impl GameConnectionTrait for GameConnection {
                     .await?;
 
                 // Wait for an opponent
-                let player = match response_rx.await {
+                match response_rx.await {
                     Ok(player) => player,
                     Err(_) => return Err("Error adding player to queue".into()),
-                };
-
-                player
+                }
             }
             Err(_) => return Err("Error getting opponent".into()),
         };
@@ -187,9 +201,12 @@ impl GameConnectionTrait for GameConnection {
             Some([self.player.clone(), opponent.clone()]),
         ));
 
-        self.connection
+        let bytes_written = self.connection
             .write(&opponent.get_id().into_bytes())
             .await?;
+        if bytes_written != 16 {
+            return Err("Failed to write opponent id".into());
+        }
 
         Ok(())
     }

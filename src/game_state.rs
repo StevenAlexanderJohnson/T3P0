@@ -28,10 +28,7 @@ pub trait GameStateTrait {
 impl GameStateTrait for GameState {
     fn new(player: Option<Player>, players: Option<[Player; 2]>) -> Self {
         GameState {
-            players: match players {
-                Some(p) => Some(Box::new(p)),
-                None => None,
-            },
+            players: players.map(Box::new),
             submitted_by: match player {
                 Some(p) => p,
                 None => Player::new(),
@@ -105,7 +102,7 @@ impl GameStateTrait for GameState {
     /// 2. The player that submitted the new game state must be different from the player that submitted the previous game state.
     /// 3. The message number must be incremented by 1.
     /// 4. The new game state must be submitted by one of the players.
-    /// This value is going to come from the TCP connection.
+    ///     This value is going to come from the TCP connection.
     /// 5. The board must be a valid move.
     ///
     /// # Arguments

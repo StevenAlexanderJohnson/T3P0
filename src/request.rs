@@ -242,7 +242,7 @@ impl DataRequest for Request {
     }
 
     fn is_ok_response(&self) -> bool {
-        return self.0 & u32::MAX == 1 << Bits::MessageType as u32;
+        self.0 & u32::MAX == 1 << Bits::MessageType as u32
     }
 }
 
