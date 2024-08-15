@@ -210,7 +210,6 @@ impl GameConnectionTrait for GameConnection {
                         Ok(player) => break player,
                         Err(oneshot::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
-                            println!("Waiting for opponent");
                             continue;
                         }
                         Err(oneshot::error::TryRecvError::Closed) => {
@@ -224,8 +223,6 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
-        println!("INITIALIZING GAME STATE");
-        println!("ME: {:?}\nOPPONENT: {:?}", self.player, opponent);
         self.game_state = Some(GameState::new(
             Some(self.player.clone()),
             Some([self.player.clone(), opponent.clone()]),

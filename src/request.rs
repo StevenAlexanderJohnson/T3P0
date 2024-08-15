@@ -221,11 +221,7 @@ impl DataRequest for Request {
         if self.get_message_number() < self.get_turn() {
             return Err("Message number is less than turn number.");
         }
-        println!(
-            "Turn: {}, Message: {}",
-            self.get_turn(),
-            self.get_message_number()
-        );
+
         if self.get_message_number() % 9 != self.get_turn() {
             return Err("Turn number and message number are not in sync.");
         }
