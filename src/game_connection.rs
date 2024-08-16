@@ -26,7 +26,7 @@ pub struct GameConnection {
     connection: TcpStream,
     game_state: Option<GameState>,
     tx: mpsc::Sender<GameRequest>,
-    opponent_sender: Arc<Mutex<mpsc::Sender<GameState>>>,
+    opponent_sender: Option<Arc<Mutex<mpsc::Sender<GameState>>>>,
     opponent_receiver: Arc<Mutex<mpsc::Receiver<GameState>>>,
 }
 
@@ -67,7 +67,7 @@ impl GameConnectionTrait for GameConnection {
             tx,
             player: Player::new(),
             game_state: None,
-            opponent_sender: Arc::new(Mutex::new(opponent_tx)),
+            opponent_sender: Some(Arc::new(Mutex::new(opponent_tx))),
             opponent_receiver: Arc::new(Mutex::new(opponent_rx)),
         }
     }
@@ -122,7 +122,10 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut delay = interval(Duration::from_secs(1));
         loop {
+            delay.tick().await;
+            // Read from opponent channel
             let opponent_message = self.opponent_receiver.lock().await.try_recv();
             match opponent_message {
                 Ok(request) => {
@@ -130,10 +133,11 @@ impl GameConnectionTrait for GameConnection {
                 }
                 Err(mpsc::error::TryRecvError::Empty) => (),
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    self.cleanup(Some("Opponent has left the match.")).await?
+                    return self.cleanup(Some("Opponent has left the match.")).await;
                 }
             };
 
+            // Read from player connection
             let mut buffer = [0u8; 4];
             match self.connection.try_read(&mut buffer) {
                 Ok(0) => self.cleanup(Some("Connection is closed")).await?,
@@ -161,7 +165,7 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             // Game server returned a player
             Ok(Some(player)) => {
-                let pc = PlayerConnection::new(self.player.clone(), player.get_channel().clone());
+                let pc = PlayerConnection::new(self.player.clone(), self.opponent_sender.clone().unwrap());
                 // Send self to the person waiting for an opponent.
                 let mut game_state =
                     GameState::from_request(Request::new_data_request(true), self.player.clone())?;
@@ -181,7 +185,7 @@ impl GameConnectionTrait for GameConnection {
                     .send(GameRequest::AddPlayerToQueue {
                         player_connection: PlayerConnection::new(
                             self.player.clone(),
-                            self.opponent_sender.clone(),
+                            self.opponent_sender.clone().unwrap(),
                         ),
                     })
                     .await?;
@@ -223,13 +227,11 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
-        self.game_state = Some(GameState::new(
-            Some(self.player.clone()),
-            Some(PlayerConnection::new(
-                opponent.get_player().clone(),
-                opponent.get_channel().clone(),
-            )),
-        ));
+
+        /* ### IMPORTANT ### */
+        // Drop your own copy of the sender to keep only one reference to the sender Arc.
+        // At this point the opponent has received the sender and is now responsible dropping it.
+        self.opponent_sender = None;
 
         let bytes_written = self
             .connection
@@ -239,10 +241,16 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write opponent id")).await;
         }
 
+        self.game_state = Some(GameState::new(
+            Some(self.player.clone()),
+            Some(opponent),
+        ));
+
         Ok(())
     }
 
     async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Cleaning up connection: {:?}", self.player);
         let (response_tx, response_rx) = oneshot::channel::<()>();
         self.tx
             .send(GameRequest::RemovePlayerFromQueue {
@@ -261,7 +269,9 @@ impl GameConnectionTrait for GameConnection {
             .shutdown()
             .await
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
+        
 
+        println!("Cleaned: {:?}", self.player);
         match message {
             Some(msg) => Err(msg.into()),
             None => Ok(()),

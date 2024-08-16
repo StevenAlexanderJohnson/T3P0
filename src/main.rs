@@ -41,6 +41,7 @@ async fn handle_connection(
     connection.handshake().await?;
     connection.get_opponent_and_initialize_state().await?;
     // Event loop
-    // connection.handle_request().await
+    connection.handle_request().await?;
+    println!("Connection closed");
     Ok(())
 }
