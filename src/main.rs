@@ -36,12 +36,10 @@ async fn handle_connection(
     socket: TcpStream,
     tx: mpsc::Sender<GameRequest>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("New Connection");
     let mut connection = game_connection::GameConnection::new(socket, tx);
     connection.handshake().await?;
     connection.get_opponent_and_initialize_state().await?;
     // Event loop
     connection.handle_request().await?;
-    println!("Connection closed");
     Ok(())
 }

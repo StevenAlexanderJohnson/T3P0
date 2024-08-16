@@ -217,7 +217,6 @@ impl GameConnectionTrait for GameConnection {
                             }
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
-                            println!("Disconnected");
                             return self
                                 .cleanup(Some("Channel closed before receiving opponent"))
                                 .await;
@@ -250,7 +249,6 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Cleaning up connection: {:?}", self.player);
         let (response_tx, response_rx) = oneshot::channel::<()>();
         self.tx
             .send(GameRequest::RemovePlayerFromQueue {
@@ -271,7 +269,6 @@ impl GameConnectionTrait for GameConnection {
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
         
 
-        println!("Cleaned: {:?}", self.player);
         match message {
             Some(msg) => Err(msg.into()),
             None => Ok(()),
