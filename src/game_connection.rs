@@ -200,7 +200,9 @@ impl GameConnectionTrait for GameConnection {
                             if !response.to_request().is_ok_response()
                                 || response.get_opponent().is_none()
                             {
-                                return self.cleanup(Some("Invalid response from game state")).await;
+                                return self
+                                    .cleanup(Some("Invalid response from game state"))
+                                    .await;
                             }
                             break response.get_opponent().unwrap();
                         }
@@ -212,7 +214,9 @@ impl GameConnectionTrait for GameConnection {
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
                             println!("Disconnected");
-                            return self.cleanup(Some("Channel closed before receiving opponent")).await;
+                            return self
+                                .cleanup(Some("Channel closed before receiving opponent"))
+                                .await;
                         }
                     }
                 }
@@ -257,7 +261,7 @@ impl GameConnectionTrait for GameConnection {
             .shutdown()
             .await
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
-        
+
         match message {
             Some(msg) => Err(msg.into()),
             None => Ok(()),
