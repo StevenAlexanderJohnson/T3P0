@@ -160,10 +160,11 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             // Game server returned a player
             Ok(Some(player)) => {
+                let pc = PlayerConnection::new(self.player.clone(), player.get_channel().clone());
                 // Send self to the person waiting for an opponent.
                 let mut game_state =
                     GameState::from_request(Request::new_data_request(true), self.player.clone())?;
-                game_state.set_opponent(Some(player.clone()));
+                game_state.set_opponent(Some(pc));
 
                 if let Err(e) = player.get_channel().lock().await.send(game_state).await {
                     return self
@@ -221,8 +222,6 @@ impl GameConnectionTrait for GameConnection {
             Some(self.player.clone()),
             Some(opponent.clone()),
         ));
-
-        println!("Writing {:?}", opponent.get_player().get_id().into_bytes());
 
         let bytes_written = self
             .connection
