@@ -1,4 +1,6 @@
-use tokio::sync::mpsc;
+use std::sync::Arc;
+
+use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::GameState;
@@ -29,17 +31,17 @@ impl PlayerTrait for Player {
 #[derive(Debug, Clone)]
 pub struct PlayerConnection {
     player: Player,
-    channel: mpsc::Sender<GameState>,
+    channel: Arc<Mutex<mpsc::Sender<GameState>>>,
 }
 
 pub trait PlayerConnectionTrait {
-    fn new(player: Player, channel: mpsc::Sender<GameState>) -> Self;
+    fn new(player: Player, channel: Arc<Mutex<mpsc::Sender<GameState>>>) -> Self;
     fn get_player(&self) -> &Player;
-    fn get_channel(&self) -> &mpsc::Sender<GameState>;
+    fn get_channel(&self) -> &Arc<Mutex<mpsc::Sender<GameState>>>;
 }
 
 impl PlayerConnectionTrait for PlayerConnection {
-    fn new(player: Player, channel: mpsc::Sender<GameState>) -> Self {
+    fn new(player: Player, channel: Arc<Mutex<mpsc::Sender<GameState>>>) -> Self {
         PlayerConnection { player, channel }
     }
 
@@ -47,7 +49,7 @@ impl PlayerConnectionTrait for PlayerConnection {
         &self.player
     }
 
-    fn get_channel(&self) -> &mpsc::Sender<GameState> {
+    fn get_channel(&self) -> &Arc<Mutex<mpsc::Sender<GameState>>> {
         &self.channel
     }
 }

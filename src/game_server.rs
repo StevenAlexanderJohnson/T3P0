@@ -161,7 +161,7 @@ mod tests {
 
         let player = Player::new();
         let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(player, tx))
+            .insert_player_into_queue(PlayerConnection::new(player, Arc::new(Mutex::new(tx))))
             .await;
 
         assert!(result.is_ok());
@@ -173,7 +173,7 @@ mod tests {
         let player = Player::new();
         let (tx, _) = mpsc::channel::<GameState>(5);
         let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(player.clone(), tx))
+            .insert_player_into_queue(PlayerConnection::new(player.clone(), Arc::new(Mutex::new(tx))))
             .await;
         assert!(result.is_ok());
 
@@ -191,7 +191,7 @@ mod tests {
         let player = Player::new();
         let (tx, _) = mpsc::channel::<GameState>(5);
         let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(player.clone(), tx))
+            .insert_player_into_queue(PlayerConnection::new(player.clone(), Arc::new(Mutex::new(tx))))
             .await;
         assert!(result.is_ok());
 

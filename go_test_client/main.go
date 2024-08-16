@@ -31,12 +31,13 @@ func main() {
 	buffer := make([]byte, 16)
 
 	for {
-		_, err = conn.Read(buffer)
+		n, err := conn.Read(buffer)
 		if err != nil {
 			fmt.Println("ERROR:", err)
 			return
 		}
-		if checkOkSignal(buffer) {
+		if n == 4 && checkOkSignal(buffer) {
+			fmt.Println("Heartbeat")
 			conn.Write(buffer[:4])
 			continue
 		}

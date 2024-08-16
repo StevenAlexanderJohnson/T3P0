@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::{mpsc, oneshot},
+    sync::{mpsc, oneshot, Mutex},
     time::{interval, Duration, Instant},
 };
 
@@ -24,7 +26,8 @@ pub struct GameConnection {
     connection: TcpStream,
     game_state: Option<GameState>,
     tx: mpsc::Sender<GameRequest>,
-    opponent_channel: (mpsc::Sender<GameState>, mpsc::Receiver<GameState>),
+    opponent_sender: Arc<Mutex<mpsc::Sender<GameState>>>,
+    opponent_receiver: Arc<Mutex<mpsc::Receiver<GameState>>>,
 }
 
 pub trait GameConnectionTrait {
@@ -40,9 +43,8 @@ pub trait GameConnectionTrait {
     fn handshake(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
-    fn get_opponent_and_initialize_state(
-        &mut self,
-    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn get_opponent_and_initialize_state(&mut self)
+        -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
     /// Handles the request from the client.
     fn handle_request(
         &mut self,
@@ -58,12 +60,14 @@ pub trait GameConnectionTrait {
 
 impl GameConnectionTrait for GameConnection {
     fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self {
+        let (opponent_tx, opponent_rx) = mpsc::channel::<GameState>(5);
         GameConnection {
             connection,
             tx,
             player: Player::new(),
             game_state: None,
-            opponent_channel: mpsc::channel::<GameState>(5),
+            opponent_sender: Arc::new(Mutex::new(opponent_tx)),
+            opponent_receiver: Arc::new(Mutex::new(opponent_rx)),
         }
     }
 
@@ -118,50 +122,25 @@ impl GameConnectionTrait for GameConnection {
 
     async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
+            let opponent_message = self.opponent_receiver.lock().await.try_recv();
+            match opponent_message {
+                Ok(request) => {
+                    println!("{:?}", request)
+                }
+                Err(mpsc::error::TryRecvError::Empty) => (),
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    self.cleanup(Some("Opponent has left the match.")).await?
+                }
+            };
+
             let mut buffer = [0u8; 4];
-            let n = self.connection.read(&mut buffer).await?;
-            if n == 0 {
-                return self.cleanup(Some("Connection closed")).await;
-            }
-            if n != 4 {
-                return self.cleanup(Some("Invalid request")).await;
-            }
-
-            let request = Request(u32::from_be_bytes(buffer));
-            // If the request is not a valid request, we break the loop
-            // If it is an ok request send an ok request back.
-            // If the user doesn't receive the ok request, they will close the connection and try again.
-
-            let (response_tx, response_rx) = oneshot::channel::<Option<GameState>>();
-            self.tx
-                .send(GameRequest::GetState {
-                    player_id: self.player.clone(),
-                    response: response_tx,
-                })
-                .await?;
-
-            match response_rx.await {
-                Ok(Some(game_state)) => {
-                    let _ = self
-                        .connection
-                        .write(&game_state.to_request().0.to_be_bytes())
-                        .await?;
+            match self.connection.try_read(&mut buffer) {
+                Ok(0) => self.cleanup(Some("Connection is closed")).await?,
+                Ok(n) => println!("read {} bytes", n),
+                Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                    continue;
                 }
-                Ok(None) => {
-                    let bytes_written = self
-                        .connection
-                        .write(&Request::new_data_request(false).0.to_be_bytes())
-                        .await?;
-                    if bytes_written != 4 {
-                        return self.cleanup(Some("Failed to write data request")).await;
-                    }
-                }
-                Err(_) => {
-                    let bytes_written = self.connection.write(&request.0.to_be_bytes()).await?;
-                    if bytes_written != 4 {
-                        return self.cleanup(Some("Failed to write request")).await;
-                    }
-                }
+                Err(e) => self.cleanup(Some(&e.to_string())).await?,
             };
         }
     }
@@ -169,6 +148,7 @@ impl GameConnectionTrait for GameConnection {
     async fn get_opponent_and_initialize_state(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Request a user from the game state
         let (response_tx, response_rx) = oneshot::channel::<Option<PlayerConnection>>();
         self.tx
             .send(GameRequest::GetPlayerFromQueue {
@@ -176,29 +156,30 @@ impl GameConnectionTrait for GameConnection {
             })
             .await?;
 
+        // Wait for game state to respond with an opponent
         let opponent = match response_rx.await {
+            // Game server returned a player
             Ok(Some(player)) => {
                 // Send self to the person waiting for an opponent.
                 let mut game_state =
                     GameState::from_request(Request::new_data_request(true), self.player.clone())?;
-                game_state.set_opponent(Some(PlayerConnection::new(
-                    self.player.clone(),
-                    self.opponent_channel.0.clone(),
-                )));
-                if let Err(e) = player.get_channel().send(game_state).await {
+                game_state.set_opponent(Some(player.clone()));
+
+                if let Err(e) = player.get_channel().lock().await.send(game_state).await {
                     return self
                         .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
                         .await;
                 }
                 player
             }
+            // Game server returned none which means the queue is empty
             Ok(None) => {
                 println!("No opponent found. Adding self to queue.");
                 self.tx
                     .send(GameRequest::AddPlayerToQueue {
                         player_connection: PlayerConnection::new(
                             self.player.clone(),
-                            self.opponent_channel.0.clone(),
+                            self.opponent_sender.clone(),
                         ),
                     })
                     .await?;
@@ -209,30 +190,27 @@ impl GameConnectionTrait for GameConnection {
 
                 loop {
                     interval.tick().await;
+                    // Wait for a response from game state
+                    let response = self.opponent_receiver.lock().await.try_recv();
 
-                    if start.elapsed() >= timeout {
-                        return self.cleanup(Some("Timeout waiting for opponent")).await;
-                    }
-
-                    match self.opponent_channel.1.try_recv() {
+                    match response {
                         Ok(response) => {
                             if !response.to_request().is_ok_response()
                                 || response.get_opponent().is_none()
                             {
-                                return self
-                                    .cleanup(Some("Invalid opponent was provided while connecting"))
-                                    .await;
+                                return Err("Invalid opponent was provided while connecting".into());
                             }
-                            break response.get_opponent().unwrap();
+                            break response.get_opponent().unwrap()
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
-                            continue;
+                            if start.elapsed() >= timeout {
+                                return Err("Timeout waiting for opponent".into());
+                            }
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
-                            return self
-                                .cleanup(Some("Channel closed before receiving opponent"))
-                                .await;
+                            println!("Disconnected");
+                            return Err("Channel closed before receiving opponent".into());
                         }
                     }
                 }
@@ -243,6 +221,8 @@ impl GameConnectionTrait for GameConnection {
             Some(self.player.clone()),
             Some(opponent.clone()),
         ));
+
+        println!("Writing {:?}", opponent.get_player().get_id().into_bytes());
 
         let bytes_written = self
             .connection
@@ -270,14 +250,10 @@ impl GameConnectionTrait for GameConnection {
             Err(e) => println!("Error removing player from queue: {:?}", e),
         }
 
-        drop(self.opponent_channel.0.clone());
-
         self.connection
             .shutdown()
             .await
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
-
-        self.game_state = None;
 
         match message {
             Some(msg) => Err(msg.into()),
