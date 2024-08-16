@@ -43,8 +43,9 @@ pub trait GameConnectionTrait {
     fn handshake(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
-    fn get_opponent_and_initialize_state(&mut self)
-        -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+    fn get_opponent_and_initialize_state(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
     /// Handles the request from the client.
     fn handle_request(
         &mut self,
@@ -199,19 +200,19 @@ impl GameConnectionTrait for GameConnection {
                             if !response.to_request().is_ok_response()
                                 || response.get_opponent().is_none()
                             {
-                                return Err("Invalid opponent was provided while connecting".into());
+                                return self.cleanup(Some("Invalid response from game state")).await;
                             }
-                            break response.get_opponent().unwrap()
+                            break response.get_opponent().unwrap();
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
                             if start.elapsed() >= timeout {
-                                return Err("Timeout waiting for opponent".into());
+                                return self.cleanup(Some("Timeout waiting for opponent")).await;
                             }
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
                             println!("Disconnected");
-                            return Err("Channel closed before receiving opponent".into());
+                            return self.cleanup(Some("Channel closed before receiving opponent")).await;
                         }
                     }
                 }
@@ -220,7 +221,10 @@ impl GameConnectionTrait for GameConnection {
         };
         self.game_state = Some(GameState::new(
             Some(self.player.clone()),
-            Some(opponent.clone()),
+            Some(PlayerConnection::new(
+                opponent.get_player().clone(),
+                opponent.get_channel().clone(),
+            )),
         ));
 
         let bytes_written = self
@@ -253,7 +257,7 @@ impl GameConnectionTrait for GameConnection {
             .shutdown()
             .await
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
-
+        
         match message {
             Some(msg) => Err(msg.into()),
             None => Ok(()),
