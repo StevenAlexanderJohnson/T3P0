@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -47,6 +48,31 @@ func main() {
 			return
 		}
 		fmt.Printf("Received: %v\n", opponentId)
+		break
+	}
+
+	messageNumber := 0
+	for {
+		time.Sleep(1 * time.Second)
+		binary.BigEndian.PutUint32(buffer[:4], uint32(1<<31))
+
+		_, err := conn.Write(buffer[:4])
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
+		fmt.Println("Sent heartbeat")
+
+		n, err := conn.Read(buffer)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
+		if n == 4 && checkOkSignal(buffer) {
+			fmt.Printf("%d: Heartbeat\n", messageNumber)
+			messageNumber++
+			continue
+		}
 	}
 }
 

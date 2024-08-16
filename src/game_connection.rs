@@ -27,7 +27,7 @@ pub struct GameConnection {
     game_state: Option<GameState>,
     tx: mpsc::Sender<GameRequest>,
     opponent_sender: Option<Arc<Mutex<mpsc::Sender<GameState>>>>,
-    opponent_receiver: Arc<Mutex<mpsc::Receiver<GameState>>>,
+    opponent_receiver: mpsc::Receiver<GameState>,
 }
 
 pub trait GameConnectionTrait {
@@ -68,7 +68,7 @@ impl GameConnectionTrait for GameConnection {
             player: Player::new(),
             game_state: None,
             opponent_sender: Some(Arc::new(Mutex::new(opponent_tx))),
-            opponent_receiver: Arc::new(Mutex::new(opponent_rx)),
+            opponent_receiver: opponent_rx,
         }
     }
 
@@ -122,31 +122,43 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut delay = interval(Duration::from_secs(1));
-        loop {
-            delay.tick().await;
-            // Read from opponent channel
-            let opponent_message = self.opponent_receiver.lock().await.try_recv();
-            match opponent_message {
-                Ok(request) => {
-                    println!("{:?}", request)
-                }
-                Err(mpsc::error::TryRecvError::Empty) => (),
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    return self.cleanup(Some("Opponent has left the match.")).await;
-                }
-            };
+        let mut delay = interval(Duration::from_secs(5));
+        let mut buffer = [0u8; 4];
 
-            // Read from player connection
-            let mut buffer = [0u8; 4];
-            match self.connection.try_read(&mut buffer) {
-                Ok(0) => self.cleanup(Some("Connection is closed")).await?,
-                Ok(n) => println!("read {} bytes", n),
-                Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
-                    continue;
+        loop {
+            tokio::select! {
+                _ = delay.tick() => {
+                    println!("Sending heartbeat: {:?}", self.player.get_id());
+                    self.send_heartbeat().await?;
                 }
-                Err(e) => self.cleanup(Some(&e.to_string())).await?,
-            };
+                request = self.opponent_receiver.recv() =>
+                {
+
+                    match request {
+                        Some(request) => {
+                            self.connection.write(&request.to_request().0.to_be_bytes()).await?;
+                        }
+                        None => {
+                            return self.cleanup(Some("Opponent has left the match.")).await;
+                        }
+                    };
+                }
+                request = self.connection.read(&mut buffer) => {
+                    match request {
+                        Ok(0) => self.cleanup(Some("Connection is closed")).await?,
+                        Ok(4) => {
+                            let opponent = self.game_state.as_ref().unwrap().get_opponent().unwrap();
+                            let request = Request(u32::from_be_bytes(buffer));
+                            opponent.get_channel().lock().await.send(GameState::from_request(request, self.player.clone())?).await?;
+                        },
+                        Ok(_) => self.cleanup(Some("Invalid request")).await?,
+                        Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                            continue;
+                        }
+                        Err(e) => self.cleanup(Some(&e.to_string())).await?,
+                    }
+                }
+            }
         }
     }
 
@@ -165,7 +177,10 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             // Game server returned a player
             Ok(Some(player)) => {
-                let pc = PlayerConnection::new(self.player.clone(), self.opponent_sender.clone().unwrap());
+                let pc = PlayerConnection::new(
+                    self.player.clone(),
+                    self.opponent_sender.clone().unwrap(),
+                );
                 // Send self to the person waiting for an opponent.
                 let mut game_state =
                     GameState::from_request(Request::new_data_request(true), self.player.clone())?;
@@ -197,7 +212,7 @@ impl GameConnectionTrait for GameConnection {
                 loop {
                     interval.tick().await;
                     // Wait for a response from game state
-                    let response = self.opponent_receiver.lock().await.try_recv();
+                    let response = self.opponent_receiver.try_recv();
 
                     match response {
                         Ok(response) => {
@@ -240,10 +255,7 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write opponent id")).await;
         }
 
-        self.game_state = Some(GameState::new(
-            Some(self.player.clone()),
-            Some(opponent),
-        ));
+        self.game_state = Some(GameState::new(Some(self.player.clone()), Some(opponent)));
 
         Ok(())
     }
@@ -267,7 +279,6 @@ impl GameConnectionTrait for GameConnection {
             .shutdown()
             .await
             .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
-        
 
         match message {
             Some(msg) => Err(msg.into()),
