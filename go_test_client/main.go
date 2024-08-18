@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -26,54 +26,23 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	fmt.Printf("%v\n", id)
 
-	buffer := make([]byte, 16)
-
-	for {
-		n, err := conn.Read(buffer)
-		if err != nil {
-			fmt.Println("ERROR:", err)
-			return
-		}
-		if n == 4 && checkOkSignal(buffer) {
-			fmt.Println("Heartbeat")
-			conn.Write(buffer[:4])
-			continue
-		}
-		opponentId, err := uuid.FromBytes(buffer)
-		if err != nil {
-			fmt.Println("ERROR:", err)
-			return
-		}
-		fmt.Printf("Received: %v\n", opponentId)
-		break
+	_, err = waitForOpponent(conn)
+	if err != nil {
+		panic(err)
 	}
 
-	messageNumber := 0
-	for {
-		time.Sleep(1 * time.Second)
-		binary.BigEndian.PutUint32(buffer[:4], uint32(1<<31))
-
-		_, err := conn.Write(buffer[:4])
-		if err != nil {
-			fmt.Println("ERROR:", err)
-			return
-		}
-		fmt.Println("Sent heartbeat")
-
-		n, err := conn.Read(buffer)
-		if err != nil {
-			fmt.Println("ERROR:", err)
-			return
-		}
-		if n == 4 && checkOkSignal(buffer) {
-			fmt.Printf("%d: Heartbeat\n", messageNumber)
-			messageNumber++
-			continue
+	err = messageLoop(conn)
+	if err != nil {
+		if err == io.EOF {
+			fmt.Println("Server has ended the connection.")
+		} else {
+			panic(err)
 		}
 	}
+
+	fmt.Println("Ending session, closing connection")
 }
 
 func checkOkSignal(buffer []byte) bool {
@@ -129,4 +98,51 @@ func performHandshake(connection net.Conn, preferredId *uuid.UUID) (*uuid.UUID, 
 	}
 
 	return &playerId, nil
+}
+
+func waitForOpponent(connection net.Conn) (*uuid.UUID, error) {
+	buffer := make([]byte, 16)
+	for {
+		n, err := connection.Read(buffer)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return nil, fmt.Errorf("error occurred while reading from connection: %v", err)
+		}
+		if n == 4 && checkOkSignal(buffer) {
+			fmt.Println("Heartbeat")
+			connection.Write(buffer[:4])
+			continue
+		}
+		output, err := uuid.FromBytes(buffer)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return nil, fmt.Errorf("error parsing opponent user id: %v", err)
+		}
+		fmt.Printf("Received: %v\n", output)
+		return &output, nil
+	}
+}
+
+func messageLoop(connection net.Conn) error {
+	buffer := make([]byte, 4)
+	messageNumber := 0
+	for {
+		n, err := connection.Read(buffer)
+		if err != nil && err == io.EOF {
+			return err
+		}
+		if err != nil || n != 4 {
+			return fmt.Errorf("error reading from the connection: %v", err)
+		}
+		messageNumber++
+
+		if checkOkSignal(buffer) {
+			fmt.Printf("%d: Heartbeat\n", messageNumber)
+			n, err := connection.Write(buffer)
+			if err != nil || n != 4 {
+				return fmt.Errorf("error writing ok response: %v", err)
+			}
+			continue
+		}
+	}
 }
