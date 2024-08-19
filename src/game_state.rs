@@ -12,7 +12,6 @@ pub struct GameState {
     turn: u8,
     message_number: u8,
     p2_turn: bool,
-    request: Request,
 }
 
 pub trait GameStateTrait {
@@ -44,7 +43,6 @@ impl GameStateTrait for GameState {
             p2_turn: is_player_two,
             message_number: 0,
             board: [0u8; 9],
-            request: Request::new_data_request(false),
         }
     }
 
@@ -73,7 +71,6 @@ impl GameStateTrait for GameState {
             turn: request.get_turn(),
             message_number: request.get_message_number(),
             p2_turn: request.get_is_p2_turn(),
-            request,
         })
     }
 
