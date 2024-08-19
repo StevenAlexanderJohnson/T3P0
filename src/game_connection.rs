@@ -316,28 +316,15 @@ impl GameConnectionTrait for GameConnection {
 
         match tokio::time::timeout(Duration::from_secs(3), self.connection.read(&mut buffer)).await
         {
-            Ok(Ok(0)) => {
-                println!("Heartbeat: Received zero bytes");
-                return self.cleanup(Some("Heartbeat: Connection closed")).await
-            },
+            Ok(Ok(0)) => return self.cleanup(Some("Heartbeat: Connection closed")).await,
             Ok(Ok(4)) => {
-                println!("Heartbeat: Received 4 bytes");
                 if !Request(u32::from_be_bytes(buffer)).is_ok_response() {
                     return self.cleanup(Some("Invalid heartbeat response")).await;
                 }
             }
-            Ok(Ok(_)) => {
-                println!("Heartbeat: Invalid response");
-                return self.cleanup(Some("Invalid heartbeat response")).await
-            },
-            Ok(Err(e)) => {
-                println!("Heartbeat: Error: {:?}", e);
-                return self.cleanup(Some(&e.to_string())).await
-            },
-            Err(_) => {
-                println!("Heartbeat: Timeout");
-                return self.cleanup(Some("Heartbeat: Timeout")).await
-            },
+            Ok(Ok(_)) => return self.cleanup(Some("Invalid heartbeat response")).await,
+            Ok(Err(e)) => return self.cleanup(Some(&e.to_string())).await,
+            Err(_) => return self.cleanup(Some("Heartbeat: Timeout")).await,
         }
 
         Ok(())
