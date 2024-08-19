@@ -1,10 +1,10 @@
 package main
 
-import "github.com/google/uuid"
+import (
+	"fmt"
+)
 
 type GameState struct {
-	opp           *uuid.UUID
-	me            *uuid.UUID
 	board         [9]uint8
 	turnNumber    uint8
 	messageNumber uint8
@@ -30,23 +30,15 @@ func NewGameState(request uint32) GameState {
 	}
 }
 
-func (gs *GameState) GetOpponent() *uuid.UUID {
-	return gs.opp
-}
-
-func (gs *GameState) GetMe() *uuid.UUID {
-	return gs.me
-}
-
-func (gs *GameState) GetBoard() [9]uint8 {
+func (gs *GameState) Board() [9]uint8 {
 	return gs.board
 }
 
-func (gs *GameState) GetTurnNumber() uint8 {
+func (gs *GameState) TurnNumber() uint8 {
 	return gs.turnNumber
 }
 
-func (gs *GameState) GetMessageNumber() uint8 {
+func (gs *GameState) MessageNumber() uint8 {
 	return gs.messageNumber
 }
 
@@ -65,4 +57,38 @@ func (gs *GameState) ToRequest() uint32 {
 		request |= 1 << 26
 	}
 	return request
+}
+
+func (gs *GameState) compareBoards(newState *GameState) error {
+	differences := 0
+
+	for i := 0; i < 9; i++ {
+		if gs.board[i] != 0 && gs.board[i] != newState.board[i] {
+			return fmt.Errorf("board state does not match")
+		}
+		if gs.board[i] != newState.board[i] {
+			differences++
+		}
+	}
+	if differences != 1 {
+		return fmt.Errorf("new state has more than one difference")
+	}
+	return nil
+}
+
+func (gs *GameState) ValidateMove(newState *GameState) error {
+	if gs.turnNumber+1 != newState.turnNumber {
+		return fmt.Errorf("new game state has incorrect turn number")
+	}
+	if gs.messageNumber+1 != newState.messageNumber {
+		return fmt.Errorf("new game state has incorrect message number")
+	}
+	if gs.isPlayerTwo == newState.isPlayerTwo {
+		return fmt.Errorf("new game state has incorrect player two status")
+	}
+	if err := gs.compareBoards(newState); err != nil {
+		return err
+	}
+
+	return nil
 }
