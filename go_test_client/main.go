@@ -158,7 +158,9 @@ func messageLoop(connection net.Conn) error {
 	for {
 		select {
 		case message := <-displayChannel:
-			fmt.Println("Received message:", message)
+			request := binary.BigEndian.Uint32(message)
+			game_state := NewGameState(request)
+			fmt.Printf("Received Game State: %+v\n\t%032b\n\t%032b\n", game_state, request, game_state.ToRequest())
 		case err := <-errorChannel:
 			return err
 		}
