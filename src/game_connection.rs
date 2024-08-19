@@ -4,7 +4,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::{mpsc, oneshot, Mutex},
-    time::{interval, Duration, Instant},
+    time::{interval, Duration},
 };
 
 use crate::{
@@ -77,7 +77,7 @@ impl GameConnectionTrait for GameConnection {
         for i in 0..2 {
             let n = self.connection.read(&mut buffer).await?;
             if n == 0 {
-                return self.cleanup(Some("Connection closed")).await;
+                return self.cleanup(Some("Handshake: Connection closed")).await;
             }
 
             // Client should first send hello (or ok) message
@@ -128,7 +128,6 @@ impl GameConnectionTrait for GameConnection {
         loop {
             tokio::select! {
                 _ = delay.tick() => {
-                    println!("Sending heartbeat: {:?}", self.player.get_id());
                     self.send_heartbeat().await?;
                 }
                 request = self.opponent_receiver.recv() =>
@@ -209,8 +208,6 @@ impl GameConnectionTrait for GameConnection {
                     .await?;
 
                 let mut interval = interval(Duration::from_secs(1));
-                let timeout = Duration::from_secs(5);
-                let start = Instant::now();
 
                 loop {
                     interval.tick().await;
@@ -228,9 +225,6 @@ impl GameConnectionTrait for GameConnection {
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
-                            if start.elapsed() >= timeout {
-                                return self.cleanup(Some("Timeout waiting for opponent")).await;
-                            }
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
                             return self
@@ -320,13 +314,30 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write data request")).await;
         }
 
-        let n = self.connection.read(&mut buffer).await?;
-        if n == 0 {
-            return self.cleanup(Some("Connection closed")).await;
-        }
-
-        if !Request(u32::from_be_bytes(buffer)).is_ok_response() {
-            return self.cleanup(Some("Invalid heartbeat response")).await;
+        match tokio::time::timeout(Duration::from_secs(3), self.connection.read(&mut buffer)).await
+        {
+            Ok(Ok(0)) => {
+                println!("Heartbeat: Received zero bytes");
+                return self.cleanup(Some("Heartbeat: Connection closed")).await
+            },
+            Ok(Ok(4)) => {
+                println!("Heartbeat: Received 4 bytes");
+                if !Request(u32::from_be_bytes(buffer)).is_ok_response() {
+                    return self.cleanup(Some("Invalid heartbeat response")).await;
+                }
+            }
+            Ok(Ok(_)) => {
+                println!("Heartbeat: Invalid response");
+                return self.cleanup(Some("Invalid heartbeat response")).await
+            },
+            Ok(Err(e)) => {
+                println!("Heartbeat: Error: {:?}", e);
+                return self.cleanup(Some(&e.to_string())).await
+            },
+            Err(_) => {
+                println!("Heartbeat: Timeout");
+                return self.cleanup(Some("Heartbeat: Timeout")).await
+            },
         }
 
         Ok(())
