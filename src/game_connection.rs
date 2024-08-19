@@ -121,49 +121,6 @@ impl GameConnectionTrait for GameConnection {
         Ok(())
     }
 
-    async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut delay = interval(Duration::from_secs(5));
-        let mut buffer = [0u8; 4];
-
-        loop {
-            tokio::select! {
-                _ = delay.tick() => {
-                    self.send_heartbeat().await?;
-                }
-                request = self.opponent_receiver.recv() =>
-                {
-
-                    match request {
-                        Some(request) => {
-                            let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
-                            if bytes_written != 4 {
-                                return self.cleanup(Some("Failed to write data request")).await;
-                            }
-                        }
-                        None => {
-                            return self.cleanup(Some("Opponent has left the match.")).await;
-                        }
-                    };
-                }
-                request = self.connection.read(&mut buffer) => {
-                    match request {
-                        Ok(0) => self.cleanup(Some("Connection is closed")).await?,
-                        Ok(4) => {
-                            let opponent = self.game_state.as_ref().unwrap().get_opponent().unwrap();
-                            let request = Request(u32::from_be_bytes(buffer));
-                            opponent.get_channel().lock().await.send(GameState::from_request(request, self.player.clone())?).await?;
-                        },
-                        Ok(_) => self.cleanup(Some("Invalid request")).await?,
-                        Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => self.cleanup(Some(&e.to_string())).await?,
-                    }
-                }
-            }
-        }
-    }
-
     async fn get_opponent_and_initialize_state(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -277,29 +234,46 @@ impl GameConnectionTrait for GameConnection {
         Ok(())
     }
 
-    async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        let (response_tx, response_rx) = oneshot::channel::<()>();
-        self.tx
-            .send(GameRequest::RemovePlayerFromQueue {
-                player: self.player.clone(),
-                response: response_tx,
-            })
-            .await
-            .unwrap_or_else(|e| println!("Error removing player from queue: {:?}", e));
+    async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut delay = interval(Duration::from_secs(5));
+        let mut buffer = [0u8; 4];
 
-        match response_rx.await {
-            Ok(_) => println!("Player removed from queue"),
-            Err(e) => println!("Error removing player from queue: {:?}", e),
-        }
+        loop {
+            tokio::select! {
+                _ = delay.tick() => {
+                    self.send_heartbeat().await?;
+                }
+                request = self.opponent_receiver.recv() =>
+                {
 
-        self.connection
-            .shutdown()
-            .await
-            .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
-
-        match message {
-            Some(msg) => Err(msg.into()),
-            None => Ok(()),
+                    match request {
+                        Some(request) => {
+                            let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
+                            if bytes_written != 4 {
+                                return self.cleanup(Some("Failed to write data request")).await;
+                            }
+                        }
+                        None => {
+                            return self.cleanup(Some("Opponent has left the match.")).await;
+                        }
+                    };
+                }
+                request = self.connection.read(&mut buffer) => {
+                    match request {
+                        Ok(0) => self.cleanup(Some("Connection is closed")).await?,
+                        Ok(4) => {
+                            let opponent = self.game_state.as_ref().unwrap().get_opponent().unwrap();
+                            let request = Request(u32::from_be_bytes(buffer));
+                            opponent.get_channel().lock().await.send(GameState::from_request(request, self.player.clone())?).await?;
+                        },
+                        Ok(_) => self.cleanup(Some("Invalid request")).await?,
+                        Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
+                            continue;
+                        }
+                        Err(e) => self.cleanup(Some(&e.to_string())).await?,
+                    }
+                }
+            }
         }
     }
 
@@ -329,4 +303,30 @@ impl GameConnectionTrait for GameConnection {
 
         Ok(())
     }
+    async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let (response_tx, response_rx) = oneshot::channel::<()>();
+        self.tx
+            .send(GameRequest::RemovePlayerFromQueue {
+                player: self.player.clone(),
+                response: response_tx,
+            })
+            .await
+            .unwrap_or_else(|e| println!("Error removing player from queue: {:?}", e));
+
+        match response_rx.await {
+            Ok(_) => println!("Player removed from queue"),
+            Err(e) => println!("Error removing player from queue: {:?}", e),
+        }
+
+        self.connection
+            .shutdown()
+            .await
+            .unwrap_or_else(|e| println!("Error shutting down connection: {:?}", e));
+
+        match message {
+            Some(msg) => Err(msg.into()),
+            None => Ok(()),
+        }
+    }
+
 }
