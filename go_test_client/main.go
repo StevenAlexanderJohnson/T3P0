@@ -124,25 +124,40 @@ func waitForOpponent(connection net.Conn) (*uuid.UUID, error) {
 }
 
 func messageLoop(connection net.Conn) error {
-	buffer := make([]byte, 4)
-	messageNumber := 0
-	for {
-		n, err := connection.Read(buffer)
-		if err != nil && err == io.EOF {
-			return err
-		}
-		if err != nil || n != 4 {
-			return fmt.Errorf("error reading from the connection: %v", err)
-		}
-		messageNumber++
+	displayChannel := make(chan []byte)
+	errorChannel := make(chan error)
 
+	// This goroutine handles communicating with the server
+	go func() {
+		buffer := make([]byte, 4)
+		n, err := connection.Read(buffer)
+		if err != nil {
+			errorChannel <- err
+			return
+		}
+		if n != 4 {
+			errorChannel <- fmt.Errorf("the message received from the server was invalid")
+			return
+		}
+
+		// If it's a heartbeat reply without sending to display channel
 		if checkOkSignal(buffer) {
-			fmt.Printf("%d: Heartbeat\n", messageNumber)
 			n, err := connection.Write(buffer)
 			if err != nil || n != 4 {
-				return fmt.Errorf("error writing ok response: %v", err)
+				errorChannel <- fmt.Errorf("error writing ok response: %v", err)
+				return
 			}
-			continue
+		}
+
+		displayChannel <- buffer
+	}()
+
+	for {
+		select {
+		case message := <-displayChannel:
+			fmt.Println(message)
+		case err := <-errorChannel:
+			return err
 		}
 	}
 }
