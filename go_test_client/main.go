@@ -124,7 +124,7 @@ func waitForOpponent(connection net.Conn) (*uuid.UUID, error) {
 }
 
 func messageLoop(connection net.Conn) error {
-	displayChannel := make(chan []byte, 5)
+	displayChannel := make(chan []byte)
 	errorChannel := make(chan error)
 
 	// This goroutine handles communicating with the server
