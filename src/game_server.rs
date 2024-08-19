@@ -1,23 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::{oneshot, Mutex};
 
 use crate::{
     player::{PlayerConnection, PlayerConnectionTrait},
-    GameState, Player,
+    Player,
 };
 
 #[derive(Debug)]
 pub enum GameRequest {
-    GetState {
-        player_id: Player,
-        response: oneshot::Sender<Option<GameState>>,
-    },
-    UpdateState {
-        player_id: Player,
-        new_state: GameState,
-        response: oneshot::Sender<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
-    },
     GetPlayerFromQueue {
         response: oneshot::Sender<Option<PlayerConnection>>,
     },
@@ -32,20 +23,10 @@ pub enum GameRequest {
 
 pub struct GameServer {
     queue: Arc<Mutex<Vec<PlayerConnection>>>,
-    game_state_map_clone: Arc<Mutex<HashMap<Player, GameState>>>,
 }
 
 pub trait GameServerTrait {
     fn new() -> Self;
-    fn get_state(
-        &self,
-        player_id: Player,
-    ) -> impl std::future::Future<Output = Option<GameState>> + Send;
-    fn set_state(
-        &self,
-        player_id: Player,
-        new_state: GameState,
-    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 
     fn get_player_from_queue(
         &self,
@@ -65,29 +46,7 @@ impl GameServerTrait for GameServer {
     fn new() -> Self {
         GameServer {
             queue: Arc::new(Mutex::new(Vec::new())),
-            game_state_map_clone: Arc::new(Mutex::new(HashMap::<Player, GameState>::new())),
         }
-    }
-
-    async fn get_state(&self, player_id: Player) -> Option<GameState> {
-        self.game_state_map_clone
-            .lock()
-            .await
-            .get(&player_id)
-            .cloned()
-    }
-
-    async fn set_state(
-        &self,
-        player_id: Player,
-        new_state: GameState,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.game_state_map_clone
-            .lock()
-            .await
-            .insert(player_id, new_state);
-
-        Ok(())
     }
 
     async fn get_player_from_queue(&self) -> Option<PlayerConnection> {
@@ -109,21 +68,6 @@ impl GameServerTrait for GameServer {
 
     async fn handle_request(&self, game_request: GameRequest) {
         match game_request {
-            GameRequest::GetState {
-                player_id,
-                response,
-            } => {
-                let state = self.get_state(player_id).await;
-                let _ = response.send(state);
-            }
-            GameRequest::UpdateState {
-                player_id,
-                new_state,
-                response,
-            } => {
-                let result = self.set_state(player_id, new_state).await;
-                let _ = response.send(result);
-            }
             GameRequest::GetPlayerFromQueue { response } => {
                 let player = self.get_player_from_queue().await;
                 let _ = response.send(player);
@@ -142,148 +86,5 @@ impl GameServerTrait for GameServer {
                 let _ = response.send(());
             }
         };
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tokio::sync::mpsc;
-
-    use crate::{GameStateTrait, PlayerTrait};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_add_player_to_queue() {
-        let game_server = GameServer::new();
-        // create a tokio::sync::oneshot channel
-        let (tx, _) = mpsc::channel::<GameState>(5);
-
-        let player = Player::new();
-        let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(player, Arc::new(Mutex::new(tx))))
-            .await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_get_player_from_queue() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let (tx, _) = mpsc::channel::<GameState>(5);
-        let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(
-                player.clone(),
-                Arc::new(Mutex::new(tx)),
-            ))
-            .await;
-        assert!(result.is_ok());
-
-        let player_from_queue = game_server
-            .get_player_from_queue()
-            .await
-            .expect("Player not found in queue");
-
-        assert_eq!(player, player_from_queue.get_player().clone());
-    }
-
-    #[tokio::test]
-    async fn test_get_player_empty() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let (tx, _) = mpsc::channel::<GameState>(5);
-        let result = game_server
-            .insert_player_into_queue(PlayerConnection::new(
-                player.clone(),
-                Arc::new(Mutex::new(tx)),
-            ))
-            .await;
-        assert!(result.is_ok());
-
-        let player_from_queue = game_server.get_player_from_queue().await;
-        assert!(player_from_queue.is_some());
-        assert_eq!(player, player_from_queue.unwrap().get_player().clone());
-
-        let player_from_queue = game_server.get_player_from_queue().await;
-        assert!(player_from_queue.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_get_state() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None, false);
-        let result = game_server.set_state(player.clone(), state.clone()).await;
-        assert!(result.is_ok());
-
-        let state_from_server = game_server.get_state(player.clone()).await;
-        assert!(state_from_server.is_some());
-        assert_eq!(
-            state.to_request(false),
-            state_from_server.unwrap().to_request(false)
-        );
-    }
-
-    #[tokio::test]
-    async fn test_get_state_empty() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None, false);
-        let result = game_server.set_state(player.clone(), state.clone()).await;
-        assert!(result.is_ok());
-
-        let state_from_server = game_server.get_state(player.clone()).await;
-        assert!(state_from_server.is_some());
-        assert_eq!(
-            state.to_request(false),
-            state_from_server.unwrap().to_request(false)
-        );
-
-        let state_from_server = game_server.get_state(Player::new()).await;
-        assert!(state_from_server.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_set_state() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None, false);
-        let result = game_server.set_state(player.clone(), state.clone()).await;
-        assert!(result.is_ok());
-
-        let state_from_server = game_server.get_state(player.clone()).await;
-        assert!(state_from_server.is_some());
-        assert_eq!(
-            state.to_request(false),
-            state_from_server.unwrap().to_request(false)
-        );
-    }
-
-    #[tokio::test]
-    async fn test_set_state_overwrite() {
-        let game_server = GameServer::new();
-        let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None, false);
-        let result = game_server.set_state(player.clone(), state.clone()).await;
-        assert!(result.is_ok());
-
-        let state_from_server = game_server.get_state(player.clone()).await;
-        assert!(state_from_server.is_some());
-        assert_eq!(
-            state.to_request(false),
-            state_from_server.unwrap().to_request(false)
-        );
-
-        let state = GameState::new(Some(player.clone()), None, false);
-        let result = game_server.set_state(player.clone(), state.clone()).await;
-        assert!(result.is_ok());
-
-        let state_from_server = game_server.get_state(player.clone()).await;
-        assert!(state_from_server.is_some());
-        assert_eq!(
-            state.to_request(false),
-            state_from_server.unwrap().to_request(false)
-        );
     }
 }
