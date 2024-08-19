@@ -219,7 +219,10 @@ mod tests {
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
+        assert_eq!(
+            state.to_request(false),
+            state_from_server.unwrap().to_request(false)
+        );
     }
 
     #[tokio::test]
@@ -232,7 +235,10 @@ mod tests {
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
+        assert_eq!(
+            state.to_request(false),
+            state_from_server.unwrap().to_request(false)
+        );
 
         let state_from_server = game_server.get_state(Player::new()).await;
         assert!(state_from_server.is_none());
@@ -248,7 +254,10 @@ mod tests {
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
+        assert_eq!(
+            state.to_request(false),
+            state_from_server.unwrap().to_request(false)
+        );
     }
 
     #[tokio::test]
@@ -261,7 +270,10 @@ mod tests {
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
+        assert_eq!(
+            state.to_request(false),
+            state_from_server.unwrap().to_request(false)
+        );
 
         let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
@@ -269,6 +281,9 @@ mod tests {
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
+        assert_eq!(
+            state.to_request(false),
+            state_from_server.unwrap().to_request(false)
+        );
     }
 }

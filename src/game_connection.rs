@@ -136,7 +136,10 @@ impl GameConnectionTrait for GameConnection {
 
                     match request {
                         Some(request) => {
-                            self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
+                            let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
+                            if bytes_written != 4 {
+                                return self.cleanup(Some("Failed to write data request")).await;
+                            }
                         }
                         None => {
                             return self.cleanup(Some("Opponent has left the match.")).await;
