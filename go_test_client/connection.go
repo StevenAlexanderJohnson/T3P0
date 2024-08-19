@@ -184,7 +184,7 @@ func (c *Connection) MessageLoop() error {
 			c.DrawBoard()
 
 		case err := <-errorChannel:
-			return fmt.Errorf("error occurred: %v", err)
+			return err
 		}
 	}
 }

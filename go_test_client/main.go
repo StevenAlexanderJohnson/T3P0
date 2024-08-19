@@ -40,7 +40,7 @@ func main() {
 	err = connection.MessageLoop()
 	if err != nil {
 		if err == io.EOF {
-			fmt.Println("Server has ended the connection.")
+			fmt.Println("\n\nServer has ended the connection.")
 		} else {
 			panic(err)
 		}
