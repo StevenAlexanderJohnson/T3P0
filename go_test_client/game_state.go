@@ -92,3 +92,22 @@ func (gs *GameState) ValidateMove(newState *GameState) error {
 
 	return nil
 }
+
+func (gs *GameState) MakeMove(boardIndex int) error {
+	if gs.board[boardIndex] != 0 {
+		return fmt.Errorf("board index is already taken")
+	}
+	if gs.isPlayerTwo && gs.turnNumber%2 == 0 {
+		return fmt.Errorf("it is player one's turn")
+	}
+	if gs.isPlayerTwo {
+		gs.board[boardIndex] = 2
+		gs.isPlayerTwo = false
+	} else {
+		gs.board[boardIndex-1] = 1
+		gs.isPlayerTwo = true
+	}
+	gs.turnNumber++
+	gs.messageNumber++
+	return nil
+}

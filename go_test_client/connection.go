@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -174,7 +175,33 @@ func (c *Connection) MessageLoop() error {
 			if input == "exit" {
 				return nil
 			}
-			fmt.Println(input)
+			move, err := strconv.Atoi(input)
+			if err != nil {
+				fmt.Println("Invalid input, please enter a number between 1 and 9")
+				continue
+			}
+
+			if move < 1 || move > 9 {
+				fmt.Println("Invalid input, please enter a number between 1 and 9")
+				continue
+			}
+
+			if c.gameState == nil {
+				panic("game state is nil")
+			}
+
+			err = c.gameState.MakeMove(move)
+			if err != nil {
+				fmt.Println("Invalid move, please try again")
+				continue
+			}
+
+			fmt.Println(c.gameState.ToRequest())
+			payload := make([]byte, 4)
+			binary.BigEndian.PutUint32(payload, c.gameState.ToRequest())
+
+			c.conn.Write(payload)
+
 		case message := <-displayChannel:
 			request := binary.BigEndian.Uint32(message)
 			newGameState := NewGameState(request)
@@ -192,6 +219,8 @@ func (c *Connection) MessageLoop() error {
 func (c *Connection) DrawBoard() {
 	board := c.gameState.Board()
 
+	// clear the screen
+	fmt.Print("\033[H\033[2J")
 	fmt.Println("T3P0 - Tic Tac Toe")
 	if c.gameState.IsPlayerTwo() {
 		fmt.Printf("Player 1: X -> %v\n", c.opponentId)

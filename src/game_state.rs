@@ -133,10 +133,6 @@ impl GameStateTrait for GameState {
         if self.message_number + 1 != game_state.message_number {
             return Ok(false);
         }
-        // If the new game state is submitted by the same player, it is not a valid turn
-        if self.submitted_by.get_id() == game_state.submitted_by.get_id() {
-            return Ok(false);
-        }
         // Check if the new game state submitted by is one of the players
         if self.opponent.is_some()
             && self.opponent.as_ref().unwrap().get_player().get_id()

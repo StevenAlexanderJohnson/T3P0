@@ -264,7 +264,12 @@ impl GameConnectionTrait for GameConnection {
                         Ok(4) => {
                             let opponent = self.game_state.as_ref().unwrap().get_opponent().unwrap();
                             let request = Request(u32::from_be_bytes(buffer));
+                            let new_state = GameState::from_request(request, self.player.clone())?;
+                            if !self.game_state.as_ref().unwrap().validate_turn(&new_state)? {
+                                return self.cleanup(Some("User sent an invalid request")).await;
+                            }
                             opponent.get_channel().lock().await.send(GameState::from_request(request, self.player.clone())?).await?;
+                            self.game_state = Some(new_state);
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
                         Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
@@ -328,5 +333,4 @@ impl GameConnectionTrait for GameConnection {
             None => Ok(()),
         }
     }
-
 }
