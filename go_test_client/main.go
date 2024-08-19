@@ -129,8 +129,8 @@ func messageLoop(connection net.Conn) error {
 
 	// This goroutine handles communicating with the server
 	go func() {
-		buffer := make([]byte, 4)
 		for {
+			buffer := make([]byte, 4)
 			n, err := connection.Read(buffer)
 			if err != nil {
 				errorChannel <- err
@@ -158,7 +158,7 @@ func messageLoop(connection net.Conn) error {
 	for {
 		select {
 		case message := <-displayChannel:
-			fmt.Println(message)
+			fmt.Println("Received message:", message)
 		case err := <-errorChannel:
 			return err
 		}

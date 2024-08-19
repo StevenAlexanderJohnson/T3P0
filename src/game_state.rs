@@ -1,6 +1,6 @@
 use crate::{
     player::{PlayerConnection, PlayerConnectionTrait},
-    request::{DataRequest, Request},
+    request::{Bits, DataRequest, Request},
     Player, PlayerTrait,
 };
 
@@ -16,19 +16,24 @@ pub struct GameState {
 }
 
 pub trait GameStateTrait {
-    fn new(player: Option<Player>, opponent: Option<PlayerConnection>) -> Self;
+    fn new(player: Option<Player>, opponent: Option<PlayerConnection>, is_player_two: bool)
+        -> Self;
     fn from_request(request: Request, player: Player) -> Result<Self, &'static str>
     where
         Self: Sized;
     fn compare_boards(&self, other: &GameState) -> bool;
     fn validate_turn(&self, game_state: &Self) -> Result<bool, &'static str>;
-    fn to_request(&self) -> Request;
+    fn to_request(&self, as_ok: bool) -> Request;
     fn set_opponent(&mut self, opponent: Option<PlayerConnection>);
     fn get_opponent(&self) -> Option<PlayerConnection>;
 }
 
 impl GameStateTrait for GameState {
-    fn new(player: Option<Player>, opponent: Option<PlayerConnection>) -> Self {
+    fn new(
+        player: Option<Player>,
+        opponent: Option<PlayerConnection>,
+        is_player_two: bool,
+    ) -> Self {
         GameState {
             opponent,
             submitted_by: match player {
@@ -36,7 +41,7 @@ impl GameStateTrait for GameState {
                 None => Player::new(),
             },
             turn: 0,
-            p2_turn: true,
+            p2_turn: is_player_two,
             message_number: 0,
             board: [0u8; 9],
             request: Request::new_data_request(false),
@@ -151,8 +156,15 @@ impl GameStateTrait for GameState {
         Ok(true)
     }
 
-    fn to_request(&self) -> Request {
-        self.request
+    fn to_request(&self, as_ok: bool) -> Request {
+        let mut output = 0u32;
+        output ^= (self.turn as u32) << Bits::TurnOffset as u32
+            | (self.message_number as u32) << Bits::MessageNumber as u32
+            | (self.p2_turn as u32) << Bits::P2Turn as u32
+            | (self.board.iter().fold(0, |acc, &x| acc << 1 | x as u32))
+            | (as_ok as u32) << Bits::MessageType as u32;
+
+        Request(output)
     }
 
     fn set_opponent(&mut self, opponent: Option<PlayerConnection>) {
@@ -171,7 +183,7 @@ mod game_state_test {
 
     #[test]
     fn test_new() {
-        let gs = GameState::new(None, None);
+        let gs = GameState::new(None, None, true);
         assert_eq!(gs.board, [0u8; 9]);
         assert_eq!(gs.turn, 0);
         assert_eq!(gs.message_number, 0);
@@ -235,8 +247,8 @@ mod game_state_test {
 
     #[test]
     fn test_compare_boards() {
-        let mut gs = GameState::new(None, None);
-        let mut gs2 = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, false);
+        let mut gs2 = GameState::new(None, None, true);
         // This is false because no changes have been made, you can't pass your turn in tic tac toe
         assert_eq!(gs.compare_boards(&gs2), false);
         gs2.board[0] = 1;
@@ -250,15 +262,13 @@ mod game_state_test {
     // VALIDATE THEY ARE CORRECT
     #[test]
     fn test_valid_turn() {
-        let mut gs = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, false);
         gs.turn = 0;
         gs.message_number = 0;
-        gs.p2_turn = false;
 
-        let mut gs2 = GameState::new(None, None);
+        let mut gs2 = GameState::new(None, None, true);
         gs2.turn = 1;
         gs2.message_number = 1;
-        gs2.p2_turn = true;
         gs2.board = [1u8, 0, 0, 0, 0, 0, 0, 0, 0];
 
         assert!(gs.validate_turn(&gs2).is_ok());
@@ -267,15 +277,13 @@ mod game_state_test {
 
     #[test]
     fn test_invalid_turn_number() {
-        let mut gs = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, false);
         gs.turn = 2;
         gs.message_number = 1;
-        gs.p2_turn = false;
 
-        let mut gs2 = GameState::new(None, None);
+        let mut gs2 = GameState::new(None, None, true);
         gs2.turn = 0;
         gs2.message_number = 0;
-        gs2.p2_turn = true;
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);
     }
@@ -283,16 +291,14 @@ mod game_state_test {
     #[test]
     fn test_invalid_message_number() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, false);
         gs.turn = 1;
         gs.message_number = 2;
-        gs.p2_turn = false;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, None);
+        let mut gs2 = GameState::new(None, None, true);
         gs2.turn = 0;
         gs2.message_number = 0;
-        gs2.p2_turn = true;
         gs2.submitted_by = players[1].clone();
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);
@@ -301,13 +307,12 @@ mod game_state_test {
     #[test]
     fn test_invalid_same_player_turn() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, true);
         gs.turn = 1;
         gs.message_number = 1;
-        gs.p2_turn = true;
         gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, None);
+        let mut gs2 = GameState::new(None, None, true);
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
@@ -319,16 +324,14 @@ mod game_state_test {
     #[test]
     fn test_invalid_submitted_by_not_player() {
         let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None);
+        let mut gs = GameState::new(None, None, false);
         gs.turn = 1;
         gs.message_number = 1;
-        gs.p2_turn = false;
         gs.submitted_by = Player::new();
 
-        let mut gs2 = GameState::new(None, None);
+        let mut gs2 = GameState::new(None, None, true);
         gs2.turn = 0;
         gs2.message_number = 0;
-        gs2.p2_turn = true;
         gs2.submitted_by = players[0].clone();
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);

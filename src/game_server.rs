@@ -213,26 +213,26 @@ mod tests {
     async fn test_get_state() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None);
+        let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
         assert!(result.is_ok());
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(), state_from_server.unwrap().to_request());
+        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
     }
 
     #[tokio::test]
     async fn test_get_state_empty() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None);
+        let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
         assert!(result.is_ok());
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(), state_from_server.unwrap().to_request());
+        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
 
         let state_from_server = game_server.get_state(Player::new()).await;
         assert!(state_from_server.is_none());
@@ -242,33 +242,33 @@ mod tests {
     async fn test_set_state() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None);
+        let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
         assert!(result.is_ok());
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(), state_from_server.unwrap().to_request());
+        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
     }
 
     #[tokio::test]
     async fn test_set_state_overwrite() {
         let game_server = GameServer::new();
         let player = Player::new();
-        let state = GameState::new(Some(player.clone()), None);
+        let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
         assert!(result.is_ok());
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(), state_from_server.unwrap().to_request());
+        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
 
-        let state = GameState::new(Some(player.clone()), None);
+        let state = GameState::new(Some(player.clone()), None, false);
         let result = game_server.set_state(player.clone(), state.clone()).await;
         assert!(result.is_ok());
 
         let state_from_server = game_server.get_state(player.clone()).await;
         assert!(state_from_server.is_some());
-        assert_eq!(state.to_request(), state_from_server.unwrap().to_request());
+        assert_eq!(state.to_request(false), state_from_server.unwrap().to_request(false));
     }
 }

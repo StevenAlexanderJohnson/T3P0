@@ -136,7 +136,7 @@ impl GameConnectionTrait for GameConnection {
 
                     match request {
                         Some(request) => {
-                            self.connection.write(&request.to_request().0.to_be_bytes()).await?;
+                            self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
                         }
                         None => {
                             return self.cleanup(Some("Opponent has left the match.")).await;
@@ -191,7 +191,7 @@ impl GameConnectionTrait for GameConnection {
                         .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
                         .await;
                 }
-                player
+                (player, true)
             }
             // Game server returned none which means the queue is empty
             Ok(None) => {
@@ -216,14 +216,12 @@ impl GameConnectionTrait for GameConnection {
 
                     match response {
                         Ok(response) => {
-                            if !response.to_request().is_ok_response()
-                                || response.get_opponent().is_none()
-                            {
+                            if response.get_opponent().is_none() {
                                 return self
                                     .cleanup(Some("Invalid response from game state"))
                                     .await;
                             }
-                            break response.get_opponent().unwrap();
+                            break (response.get_opponent().unwrap(), false);
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
@@ -247,15 +245,37 @@ impl GameConnectionTrait for GameConnection {
         // At this point the opponent has received the sender and is now responsible dropping it.
         self.opponent_sender = None;
 
+        let opponent_player = opponent.0;
+        let is_player_two = opponent.1;
         let bytes_written = self
             .connection
-            .write(&opponent.get_player().get_id().into_bytes())
+            .write(&opponent_player.get_player().get_id().into_bytes())
             .await?;
         if bytes_written != 16 {
             return self.cleanup(Some("Failed to write opponent id")).await;
         }
 
-        self.game_state = Some(GameState::new(Some(self.player.clone()), Some(opponent)));
+        self.game_state = Some(GameState::new(
+            Some(self.player.clone()),
+            Some(opponent_player),
+            is_player_two,
+        ));
+
+        let bytes_written = self
+            .connection
+            .write(
+                &self
+                    .game_state
+                    .as_ref()
+                    .unwrap()
+                    .to_request(false)
+                    .0
+                    .to_be_bytes(),
+            )
+            .await?;
+        if bytes_written != 4 {
+            return self.cleanup(Some("Failed to write data request")).await;
+        }
 
         Ok(())
     }
