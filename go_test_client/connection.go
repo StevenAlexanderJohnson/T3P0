@@ -199,7 +199,6 @@ func (c *Connection) MessageLoop() error {
 				continue
 			}
 
-			fmt.Println(c.gameState.ToRequest())
 			payload := make([]byte, 4)
 			binary.BigEndian.PutUint32(payload, c.gameState.ToRequest())
 			c.conn.Write(payload)
@@ -207,7 +206,6 @@ func (c *Connection) MessageLoop() error {
 
 		case message := <-displayChannel:
 			request := binary.BigEndian.Uint32(message)
-			fmt.Printf("\n%b\n", request)
 			newGameState := NewGameState(request)
 			if c.gameState == nil {
 				c.gameState = NewGameState(0)
@@ -233,8 +231,8 @@ func (c *Connection) DrawBoard() {
 		fmt.Printf("Player 1: X -> %v\n", c.opponentId)
 		fmt.Printf("Player 2: O -> %v (you)\n\n", c.playerId)
 	} else {
-		fmt.Printf("Player 2: X -> %v (you)\n", c.playerId)
-		fmt.Printf("Player 1: O -> %v\n\n", c.opponentId)
+		fmt.Printf("Player 1: X -> %v (you)\n", c.playerId)
+		fmt.Printf("Player 2: O -> %v\n\n", c.opponentId)
 	}
 
 	fmt.Printf("Turn: %d\n", c.gameState.TurnNumber())

@@ -58,7 +58,7 @@ func (gs *GameState) ToRequest() uint32 {
 	if gs.isPlayerTwo {
 		request |= 1 << 26
 	}
-	fmt.Println("+032b", request)
+	fmt.Printf("%+032b\n", request)
 	return request
 }
 
