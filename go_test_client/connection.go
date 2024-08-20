@@ -212,7 +212,7 @@ func (c *Connection) MessageLoop() error {
 				c.imPlayerTwo = newGameState.IsPlayerTwo()
 				newGameState = c.gameState
 			}
-			c.gameState = newGameState
+			c.gameState.UpdateState(newGameState)
 			c.DrawBoard()
 
 		case err := <-errorChannel:

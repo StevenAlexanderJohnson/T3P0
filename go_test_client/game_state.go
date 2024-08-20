@@ -97,14 +97,14 @@ func (gs *GameState) ValidateMove(newState *GameState) error {
 }
 
 func (gs *GameState) MakeMove(boardIndex int) error {
-	if gs.board[boardIndex] != 0 {
+	if gs.board[boardIndex-1] != 0 {
 		return fmt.Errorf("board index is already taken")
 	}
 	if gs.isPlayerTwo && gs.turnNumber%2 == 0 {
 		return fmt.Errorf("it is player one's turn")
 	}
 	if gs.isPlayerTwo {
-		gs.board[boardIndex] = 2
+		gs.board[boardIndex-1] = 2
 		gs.isPlayerTwo = false
 	} else {
 		gs.board[boardIndex-1] = 1
@@ -112,5 +112,23 @@ func (gs *GameState) MakeMove(boardIndex int) error {
 	}
 	gs.turnNumber++
 	gs.messageNumber++
+	return nil
+}
+
+func (gs *GameState) UpdateState(newState *GameState) error {
+	for i := 0; i < 9; i++ {
+		if newState.board[i] != 0 {
+			if newState.isPlayerTwo {
+				gs.board[i] = 1
+			} else {
+				gs.board[i] = 2
+			}
+		}
+	}
+
+	gs.turnNumber = newState.turnNumber
+	gs.messageNumber = newState.messageNumber
+	gs.isPlayerTwo = newState.isPlayerTwo
+
 	return nil
 }
