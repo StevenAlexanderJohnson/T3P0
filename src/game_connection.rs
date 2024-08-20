@@ -25,6 +25,7 @@ pub struct GameConnection {
     player: Player,
     connection: TcpStream,
     game_state: GameState,
+    opponent_state: GameState,
     tx: mpsc::Sender<GameServerRequest>,
     opponent_sender: Option<Arc<mpsc::Sender<GameMessage>>>,
     opponent_receiver: mpsc::Receiver<GameMessage>,
@@ -132,7 +133,8 @@ impl GameConnectionTrait for GameConnection {
             connection,
             tx,
             player: player_id.clone(),
-            game_state: GameState::new(Some(player_id), None, false),
+            game_state: GameState::new(false),
+            opponent_state: GameState::new(false),
             opponent_sender: Some(Arc::new(opponent_tx)),
             opponent_receiver: opponent_rx,
         }
@@ -220,6 +222,7 @@ impl GameConnectionTrait for GameConnection {
 
         let opponent_player = opponent.0;
         let is_player_two = opponent.1;
+
         let bytes_written = self
             .connection
             .write(&opponent_player.get_player().get_id().into_bytes())
@@ -229,11 +232,8 @@ impl GameConnectionTrait for GameConnection {
         }
 
         self.opponent_sender = Some(opponent_player.get_channel().clone());
-        self.game_state = GameState::new(
-            Some(self.player.clone()),
-            Some(opponent_player),
-            is_player_two,
-        );
+        self.game_state = GameState::new(is_player_two);
+        self.opponent_state = GameState::new(!is_player_two);
 
         let bytes_written = self
             .connection
@@ -277,11 +277,11 @@ impl GameConnectionTrait for GameConnection {
                         Ok(0) => self.cleanup(Some("Connection is closed")).await?,
                         Ok(4) => {
                             let request = Request(u32::from_be_bytes(buffer));
-                            let new_state = GameState::from_request(request, self.player.clone())?;
+                            let new_state = GameState::from_request(request)?;
                             if !self.game_state.validate_turn(&new_state)? {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
-                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(GameState::from_request(request, self.player.clone())?)).await?;
+                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(GameState::from_request(request)?)).await?;
                             self.game_state = new_state;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,

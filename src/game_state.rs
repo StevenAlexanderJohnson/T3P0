@@ -1,13 +1,7 @@
-use crate::{
-    player::{PlayerConnection, PlayerConnectionTrait},
-    request::{Bits, DataRequest, Request},
-    Player, PlayerTrait,
-};
+use crate::request::{Bits, DataRequest, Request};
 
 #[derive(Debug, Clone)]
 pub struct GameState {
-    opponent: Option<PlayerConnection>,
-    submitted_by: Player,
     board: [u8; 9],
     turn: u8,
     message_number: u8,
@@ -15,30 +9,18 @@ pub struct GameState {
 }
 
 pub trait GameStateTrait {
-    fn new(player: Option<Player>, opponent: Option<PlayerConnection>, is_player_two: bool)
-        -> Self;
-    fn from_request(request: Request, player: Player) -> Result<Self, &'static str>
+    fn new(is_player_two: bool) -> Self;
+    fn from_request(request: Request) -> Result<Self, &'static str>
     where
         Self: Sized;
     fn compare_boards(&self, other: &GameState) -> bool;
     fn validate_turn(&self, game_state: &Self) -> Result<bool, &'static str>;
     fn to_request(&self, as_ok: bool) -> Request;
-    fn set_opponent(&mut self, opponent: Option<PlayerConnection>);
-    fn get_opponent(&self) -> Option<PlayerConnection>;
 }
 
 impl GameStateTrait for GameState {
-    fn new(
-        player: Option<Player>,
-        opponent: Option<PlayerConnection>,
-        is_player_two: bool,
-    ) -> Self {
+    fn new(is_player_two: bool) -> Self {
         GameState {
-            opponent,
-            submitted_by: match player {
-                Some(p) => p,
-                None => Player::new(),
-            },
             turn: 0,
             p2_turn: is_player_two,
             message_number: 0,
@@ -55,7 +37,7 @@ impl GameStateTrait for GameState {
     /// # Returns
     ///
     /// * `Option<Self>` - A new GameState if the request is valid, None otherwise
-    fn from_request(request: Request, player: Player) -> Result<Self, &'static str> {
+    fn from_request(request: Request) -> Result<Self, &'static str> {
         request.validate_request()?;
 
         let mut board = [0u8; 9];
@@ -65,8 +47,6 @@ impl GameStateTrait for GameState {
         }
 
         Ok(GameState {
-            opponent: None,
-            submitted_by: player,
             board,
             turn: request.get_turn(),
             message_number: request.get_message_number(),
@@ -133,14 +113,6 @@ impl GameStateTrait for GameState {
         if self.message_number + 1 != game_state.message_number {
             return Ok(false);
         }
-        // Check if the new game state submitted by is one of the players
-        if self.opponent.is_some()
-            && self.opponent.as_ref().unwrap().get_player().get_id()
-                != game_state.submitted_by.get_id()
-            && self.submitted_by.get_id() != game_state.submitted_by.get_id()
-        {
-            return Ok(false);
-        }
 
         if !self.compare_boards(game_state) {
             return Ok(false);
@@ -159,14 +131,6 @@ impl GameStateTrait for GameState {
 
         Request(output)
     }
-
-    fn set_opponent(&mut self, opponent: Option<PlayerConnection>) {
-        self.opponent = opponent;
-    }
-
-    fn get_opponent(&self) -> Option<PlayerConnection> {
-        self.opponent.clone()
-    }
 }
 
 #[cfg(test)]
@@ -176,7 +140,7 @@ mod game_state_test {
 
     #[test]
     fn test_new() {
-        let gs = GameState::new(None, None, true);
+        let gs = GameState::new(true);
         assert_eq!(gs.board, [0u8; 9]);
         assert_eq!(gs.turn, 0);
         assert_eq!(gs.message_number, 0);
@@ -186,7 +150,7 @@ mod game_state_test {
     #[test]
     fn test_from_request() {
         let r = Request::new_data_request(true);
-        let gs = GameState::from_request(r, Player::new());
+        let gs = GameState::from_request(r);
         assert!(gs.is_ok());
 
         let gs = gs.unwrap();
@@ -204,7 +168,7 @@ mod game_state_test {
                 | (1 << Bits::MessageNumber as u32)
                 | (1 << Bits::TurnOffset as u32),
         );
-        let gs = GameState::from_request(r, Player::new());
+        let gs = GameState::from_request(r);
         assert!(gs.is_ok());
         let gs = gs.unwrap();
         assert_eq!(gs.board, [0u8; 9]);
@@ -216,7 +180,7 @@ mod game_state_test {
     #[test]
     fn test_from_request_board_all_ones() {
         let r = Request(0b111111111);
-        let gs = GameState::from_request(r, Player::new());
+        let gs = GameState::from_request(r);
         assert!(gs.is_ok());
         let gs = gs.unwrap();
         assert_eq!(gs.board, [1u8; 9]);
@@ -228,20 +192,20 @@ mod game_state_test {
     #[test]
     fn test_from_request_invalid_turn() {
         let r = Request((1 << Bits::TurnOffset as u32) | (1 << Bits::MessageNumber as u32));
-        let gs = GameState::from_request(r, Player::new());
+        let gs = GameState::from_request(r);
         assert!(gs.is_err());
     }
     #[test]
     fn test_from_request_invalid_player() {
         let r = Request(1 << Bits::P2Turn as u32);
-        let gs = GameState::from_request(r, Player::new());
+        let gs = GameState::from_request(r);
         assert!(gs.is_err());
     }
 
     #[test]
     fn test_compare_boards() {
-        let mut gs = GameState::new(None, None, false);
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs = GameState::new(false);
+        let mut gs2 = GameState::new(true);
         // This is false because no changes have been made, you can't pass your turn in tic tac toe
         assert_eq!(gs.compare_boards(&gs2), false);
         gs2.board[0] = 1;
@@ -255,11 +219,11 @@ mod game_state_test {
     // VALIDATE THEY ARE CORRECT
     #[test]
     fn test_valid_turn() {
-        let mut gs = GameState::new(None, None, false);
+        let mut gs = GameState::new(false);
         gs.turn = 0;
         gs.message_number = 0;
 
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs2 = GameState::new(true);
         gs2.turn = 1;
         gs2.message_number = 1;
         gs2.board = [1u8, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -270,11 +234,11 @@ mod game_state_test {
 
     #[test]
     fn test_invalid_turn_number() {
-        let mut gs = GameState::new(None, None, false);
+        let mut gs = GameState::new(false);
         gs.turn = 2;
         gs.message_number = 1;
 
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs2 = GameState::new(true);
         gs2.turn = 0;
         gs2.message_number = 0;
 
@@ -283,49 +247,40 @@ mod game_state_test {
 
     #[test]
     fn test_invalid_message_number() {
-        let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None, false);
+        let mut gs = GameState::new(false);
         gs.turn = 1;
         gs.message_number = 2;
-        gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs2 = GameState::new(true);
         gs2.turn = 0;
         gs2.message_number = 0;
-        gs2.submitted_by = players[1].clone();
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);
     }
 
     #[test]
     fn test_invalid_same_player_turn() {
-        let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None, true);
+        let mut gs = GameState::new(true);
         gs.turn = 1;
         gs.message_number = 1;
-        gs.submitted_by = players[0].clone();
 
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs2 = GameState::new(true);
         gs2.turn = 0;
         gs2.message_number = 0;
         gs2.p2_turn = true;
-        gs2.submitted_by = players[0].clone();
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);
     }
 
     #[test]
     fn test_invalid_submitted_by_not_player() {
-        let players = [Player::new(), Player::new()];
-        let mut gs = GameState::new(None, None, false);
+        let mut gs = GameState::new(false);
         gs.turn = 1;
         gs.message_number = 1;
-        gs.submitted_by = Player::new();
 
-        let mut gs2 = GameState::new(None, None, true);
+        let mut gs2 = GameState::new(true);
         gs2.turn = 0;
         gs2.message_number = 0;
-        gs2.submitted_by = players[0].clone();
 
         assert_eq!(gs.validate_turn(&gs2).unwrap(), false);
     }
