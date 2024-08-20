@@ -59,6 +59,71 @@ pub trait GameConnectionTrait {
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
 }
 
+impl GameConnection {
+    async fn send_player_info_to_opponent(
+        &mut self,
+        player: &PlayerConnection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a PlayerConnection to hold your information and send it to your opponent.
+        if let Err(e) = player
+            .get_channel()
+            .send(GameMessage::PlayerConnection(PlayerConnection::new(
+                self.player.clone(),
+                self.opponent_sender.clone().unwrap(),
+            )))
+            .await
+        {
+            return self
+                .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
+                .await;
+        }
+
+        Ok(())
+    }
+
+    async fn add_player_to_queue(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.tx
+            .send(GameServerRequest::AddPlayerToQueue {
+                player_connection: PlayerConnection::new(
+                    self.player.clone(),
+                    self.opponent_sender.clone().unwrap(),
+                ),
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn wait_for_opponent(
+        &mut self,
+    ) -> Result<(PlayerConnection, bool), Box<dyn std::error::Error>> {
+        let mut interval = interval(Duration::from_secs(1));
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    self.send_heartbeat().await?;
+                }
+                opponent = self.opponent_receiver.recv() => {
+                    match opponent {
+                        Some(GameMessage::PlayerConnection(pc)) => {
+                            return Ok((pc, false));
+                        }
+                        Some(GameMessage::GameState(_)) => {
+                            return Err("Received game state while expecting player connection".into());
+                        }
+                        Some(GameMessage::Request(_)) => {
+                            return Err("Received request while expecting player connection".into());
+                        }
+                        None => {
+                            return Err("Channel closed before receiving opponent".into());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl GameConnectionTrait for GameConnection {
     fn new(connection: TcpStream, tx: mpsc::Sender<GameServerRequest>) -> Self {
         let (opponent_tx, opponent_rx) = mpsc::channel::<GameMessage>(5);
@@ -137,59 +202,13 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             // Game server returned a player
             Ok(Some(player)) => {
-                let pc = PlayerConnection::new(
-                    self.player.clone(),
-                    self.opponent_sender.clone().unwrap(),
-                );
-
-                if let Err(e) = player
-                    .get_channel()
-                    .send(GameMessage::PlayerConnection(pc))
-                    .await
-                {
-                    return self
-                        .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
-                        .await;
-                }
+                self.send_player_info_to_opponent(&player).await?;
                 (player, true)
             }
             // Game server returned none which means the queue is empty
             Ok(None) => {
-                println!("No opponent found. Adding self to queue.");
-                self.tx
-                    .send(GameServerRequest::AddPlayerToQueue {
-                        player_connection: PlayerConnection::new(
-                            self.player.clone(),
-                            self.opponent_sender.clone().unwrap(),
-                        ),
-                    })
-                    .await?;
-
-                let mut interval = interval(Duration::from_secs(1));
-
-                loop {
-                    interval.tick().await;
-                    // Wait for a response from game state
-                    match self.opponent_receiver.try_recv() {
-                        Ok(GameMessage::PlayerConnection(pc)) => {
-                            break (pc, true);
-                        }
-                        Ok(GameMessage::GameState(_)) => {
-                            return self.cleanup(Some("Received game state while expecting player connection")).await;
-                        }
-                        Ok(GameMessage::Request(_)) => {
-                            return self.cleanup(Some("Received request while expecting player connection")).await;
-                        }
-                        Err(mpsc::error::TryRecvError::Empty) => {
-                            self.send_heartbeat().await?;
-                        }
-                        Err(mpsc::error::TryRecvError::Disconnected) => {
-                            return self
-                                .cleanup(Some("Channel closed before receiving opponent"))
-                                .await;
-                        }
-                    }
-                }
+                self.add_player_to_queue().await?;
+                self.wait_for_opponent().await?
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
