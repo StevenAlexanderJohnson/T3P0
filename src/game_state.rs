@@ -10,25 +10,49 @@ pub struct GameState {
 
 impl GameState {
     pub fn validate_board(&mut self, new_state: &GameState, is_p2: bool) -> bool {
-        let mut different = false;
-        // Validate that the board states match up. New state will only be from the perspective of the player that submitted it
+        let mut num_changes = 0;
+        let mut changed_index = None;
+
         for i in 0..9 {
-            if new_state.board[i] != 0 {
-                // Player is attempting to overwrite a spot that is already taken
-                if (self.board[i] == 1 && is_p2 && new_state.board[i] == 2)
-                    || (self.board[i] == 2 && !is_p2 && new_state.board[i] == 1)
-                {
+            match (self.board[i], new_state.board[i]) {
+                (0, p) if p == 1 => {
+                    num_changes += 1;
+                    changed_index = Some(i);
+                }
+                (p, 0) if p == if is_p2 { 2 } else { 1 } => {
                     return false;
                 }
-                if self.board[i] == 0 && different {
+                (p1, p2) if p1 != 0 && p1 != if is_p2 { 2 } else { 1 } && p2 == 1 => {
                     return false;
                 }
-
-                different = true;
+                _ => {
+                    return false;
+                }
             }
-        }
+        };
 
-        different
+        num_changes == 1 && changed_index.is_some() && self.board[changed_index.unwrap()] == 0
+
+        // let mut different = false;
+
+        // // Validate that the board states match up. New state will only be from the perspective of the player that submitted it
+        // for i in 0..9 {
+        //     if new_state.board[i] != 0 {
+        //         // Player is attempting to overwrite a spot that is already taken
+        //         if (self.board[i] == 1 && is_p2 && new_state.board[i] == 2)
+        //             || (self.board[i] == 2 && !is_p2 && new_state.board[i] == 1)
+        //         {
+        //             return false;
+        //         }
+        //         if self.board[i] == 0 && different {
+        //             return false;
+        //         }
+
+        //         different = true;
+        //     }
+        // }
+
+        // different
     }
 
     pub fn update_board(&mut self, new_state: &GameState, is_p2: bool) {
