@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::{mpsc, oneshot, Mutex},
+    sync::{mpsc, oneshot},
     time::{interval, Duration},
 };
 
@@ -24,9 +24,9 @@ use crate::{
 pub struct GameConnection {
     player: Player,
     connection: TcpStream,
-    game_state: Option<GameState>,
+    game_state: GameState,
     tx: mpsc::Sender<GameRequest>,
-    opponent_sender: Option<Arc<Mutex<mpsc::Sender<GameState>>>>,
+    opponent_sender: Option<Arc<mpsc::Sender<GameState>>>,
     opponent_receiver: mpsc::Receiver<GameState>,
 }
 
@@ -62,12 +62,13 @@ pub trait GameConnectionTrait {
 impl GameConnectionTrait for GameConnection {
     fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self {
         let (opponent_tx, opponent_rx) = mpsc::channel::<GameState>(5);
+        let player_id = Player::new();
         GameConnection {
             connection,
             tx,
-            player: Player::new(),
-            game_state: None,
-            opponent_sender: Some(Arc::new(Mutex::new(opponent_tx))),
+            player: player_id.clone(),
+            game_state: GameState::new(Some(player_id), None, false),
+            opponent_sender: Some(Arc::new(opponent_tx)),
             opponent_receiver: opponent_rx,
         }
     }
@@ -145,7 +146,7 @@ impl GameConnectionTrait for GameConnection {
                     GameState::from_request(Request::new_data_request(true), self.player.clone())?;
                 game_state.set_opponent(Some(pc));
 
-                if let Err(e) = player.get_channel().lock().await.send(game_state).await {
+                if let Err(e) = player.get_channel().send(game_state).await {
                     return self
                         .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
                         .await;
@@ -209,23 +210,16 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write opponent id")).await;
         }
 
-        self.game_state = Some(GameState::new(
+        self.opponent_sender = Some(opponent_player.get_channel().clone());
+        self.game_state = GameState::new(
             Some(self.player.clone()),
             Some(opponent_player),
             is_player_two,
-        ));
+        );
 
         let bytes_written = self
             .connection
-            .write(
-                &self
-                    .game_state
-                    .as_ref()
-                    .unwrap()
-                    .to_request(false)
-                    .0
-                    .to_be_bytes(),
-            )
+            .write(&self.game_state.to_request(false).0.to_be_bytes())
             .await?;
         if bytes_written != 4 {
             return self.cleanup(Some("Failed to write data request")).await;
@@ -235,17 +229,17 @@ impl GameConnectionTrait for GameConnection {
     }
 
     async fn handle_request(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut delay = interval(Duration::from_secs(5));
+        let mut delay = interval(Duration::from_secs(10));
         let mut buffer = [0u8; 4];
 
         loop {
             tokio::select! {
                 _ = delay.tick() => {
-                    self.send_heartbeat().await?;
+                    // self.send_heartbeat().await?;
                 }
                 request = self.opponent_receiver.recv() =>
                 {
-
+                    println!("{:?}\n", request);
                     match request {
                         Some(request) => {
                             let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
@@ -262,14 +256,13 @@ impl GameConnectionTrait for GameConnection {
                     match request {
                         Ok(0) => self.cleanup(Some("Connection is closed")).await?,
                         Ok(4) => {
-                            let opponent = self.game_state.as_ref().unwrap().get_opponent().unwrap();
                             let request = Request(u32::from_be_bytes(buffer));
                             let new_state = GameState::from_request(request, self.player.clone())?;
-                            if !self.game_state.as_ref().unwrap().validate_turn(&new_state)? {
+                            if !self.game_state.validate_turn(&new_state)? {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
-                            opponent.get_channel().lock().await.send(GameState::from_request(request, self.player.clone())?).await?;
-                            self.game_state = Some(new_state);
+                            self.opponent_sender.as_ref().unwrap().send(GameState::from_request(request, self.player.clone())?).await?;
+                            self.game_state = new_state;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
                         Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
@@ -293,7 +286,7 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write data request")).await;
         }
 
-        match tokio::time::timeout(Duration::from_secs(3), self.connection.read(&mut buffer)).await
+        match tokio::time::timeout(Duration::from_secs(5), self.connection.read(&mut buffer)).await
         {
             Ok(Ok(0)) => return self.cleanup(Some("Heartbeat: Connection closed")).await,
             Ok(Ok(4)) => {
@@ -308,6 +301,7 @@ impl GameConnectionTrait for GameConnection {
 
         Ok(())
     }
+
     async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         let (response_tx, response_rx) = oneshot::channel::<()>();
         self.tx

@@ -11,18 +11,18 @@ type GameState struct {
 	isPlayerTwo   bool
 }
 
-func NewGameState(request uint32) GameState {
+func NewGameState(request uint32) *GameState {
 	board := [9]uint8{}
 	board_state := request & 0b111111111
 	for i := 0; i < 9; i++ {
-		board[i] = uint8(board_state>>i) & 1
+		board[8-i] = uint8(board_state>>i) & 1
 	}
 
 	turn_number := (request >> 27) & ((1 << 4) - 1)
 	message_number := (request >> 21) & ((1 << 5) - 1)
 	player_two := (request>>26)&1 == 1
 
-	return GameState{
+	return &GameState{
 		board:         board,
 		turnNumber:    uint8(turn_number),
 		messageNumber: uint8(message_number),
@@ -49,13 +49,16 @@ func (gs *GameState) IsPlayerTwo() bool {
 func (gs *GameState) ToRequest() uint32 {
 	request := uint32(0)
 	for i := 0; i < 9; i++ {
-		request |= uint32(gs.board[i]) << i
+		if (gs.board[i] == 1 && gs.isPlayerTwo) || (gs.board[i] == 2 && !gs.isPlayerTwo) {
+			request |= (1 << i)
+		}
 	}
 	request |= uint32(gs.turnNumber) << 27
 	request |= uint32(gs.messageNumber) << 21
 	if gs.isPlayerTwo {
 		request |= 1 << 26
 	}
+	fmt.Println("+032b", request)
 	return request
 }
 

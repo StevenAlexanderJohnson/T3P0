@@ -12,18 +12,20 @@ import (
 )
 
 type Connection struct {
-	conn       net.Conn
-	playerId   *uuid.UUID
-	opponentId *uuid.UUID
-	gameState  *GameState
+	conn        net.Conn
+	playerId    *uuid.UUID
+	opponentId  *uuid.UUID
+	imPlayerTwo bool
+	gameState   *GameState
 }
 
 func NewConnection(conn net.Conn) Connection {
 	return Connection{
-		conn:       conn,
-		playerId:   nil,
-		opponentId: nil,
-		gameState:  nil,
+		conn:        conn,
+		playerId:    nil,
+		opponentId:  nil,
+		imPlayerTwo: false,
+		gameState:   nil,
 	}
 }
 
@@ -133,11 +135,9 @@ func (c *Connection) MessageLoop() error {
 			n, err := c.conn.Read(buffer)
 			if err != nil {
 				errorChannel <- err
-				return
 			}
 			if n != 4 {
 				errorChannel <- fmt.Errorf("the message received from the server was invalid")
-				return
 			}
 
 			// If it's a heartbeat reply without sending to display channel
@@ -145,7 +145,6 @@ func (c *Connection) MessageLoop() error {
 				n, err := c.conn.Write(buffer)
 				if err != nil || n != 4 {
 					errorChannel <- fmt.Errorf("error writing ok response: %v", err)
-					return
 				}
 				continue
 			}
@@ -199,15 +198,19 @@ func (c *Connection) MessageLoop() error {
 			fmt.Println(c.gameState.ToRequest())
 			payload := make([]byte, 4)
 			binary.BigEndian.PutUint32(payload, c.gameState.ToRequest())
-
 			c.conn.Write(payload)
+			c.DrawBoard()
 
 		case message := <-displayChannel:
 			request := binary.BigEndian.Uint32(message)
+			fmt.Printf("\n%b\n", request)
 			newGameState := NewGameState(request)
 			if c.gameState == nil {
-				c.gameState = &newGameState
+				c.gameState = NewGameState(0)
+				c.imPlayerTwo = newGameState.IsPlayerTwo()
+				newGameState = c.gameState
 			}
+			c.gameState = newGameState
 			c.DrawBoard()
 
 		case err := <-errorChannel:
@@ -222,13 +225,14 @@ func (c *Connection) DrawBoard() {
 	// clear the screen
 	fmt.Print("\033[H\033[2J")
 	fmt.Println("T3P0 - Tic Tac Toe")
-	if c.gameState.IsPlayerTwo() {
+	if c.imPlayerTwo {
 		fmt.Printf("Player 1: X -> %v\n", c.opponentId)
 		fmt.Printf("Player 2: O -> %v (you)\n\n", c.playerId)
 	} else {
 		fmt.Printf("Player 2: X -> %v (you)\n", c.playerId)
 		fmt.Printf("Player 1: O -> %v\n\n", c.opponentId)
 	}
+
 	fmt.Printf("Turn: %d\n", c.gameState.TurnNumber())
 	fmt.Printf("Message: %d\n\n", c.gameState.MessageNumber())
 	for i := 0; i < 3; i++ {
@@ -236,18 +240,18 @@ func (c *Connection) DrawBoard() {
 			fmt.Println("-----------")
 		}
 		for j := 0; j < 3; j++ {
-			value := rune(i*3 + j + 1)
+			value := strconv.Itoa(i*3 + j + 1)
 			if board[i*3+j] != 0 {
 				if board[i*3+j] == 1 {
-					value = 'X'
+					value = "X"
 				} else {
-					value = 'O'
+					value = "O"
 				}
 			}
 			if j != 2 {
-				fmt.Printf(" %d |", value)
+				fmt.Printf(" %s |", value)
 			} else {
-				fmt.Printf(" %d ", value)
+				fmt.Printf(" %s ", value)
 			}
 		}
 		fmt.Printf("\n")
