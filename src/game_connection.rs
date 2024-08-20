@@ -23,12 +23,13 @@ use crate::{
 /// * `tx` - The sending channel to send requests to the main thread.
 pub struct GameConnection {
     player: Player,
+    opponent: Option<Player>,
     connection: TcpStream,
     game_state: GameState,
-    opponent_state: GameState,
     tx: mpsc::Sender<GameServerRequest>,
     opponent_sender: Option<Arc<mpsc::Sender<GameMessage>>>,
     opponent_receiver: mpsc::Receiver<GameMessage>,
+    is_p2: bool,
 }
 
 pub trait GameConnectionTrait {
@@ -133,10 +134,11 @@ impl GameConnectionTrait for GameConnection {
             connection,
             tx,
             player: player_id.clone(),
+            opponent: None,
             game_state: GameState::new(false),
-            opponent_state: GameState::new(false),
             opponent_sender: Some(Arc::new(opponent_tx)),
             opponent_receiver: opponent_rx,
+            is_p2: false,
         }
     }
 
@@ -205,11 +207,13 @@ impl GameConnectionTrait for GameConnection {
             // Game server returned a player
             Ok(Some(player)) => {
                 self.send_player_info_to_opponent(&player).await?;
+                self.is_p2 = true;
                 (player, true)
             }
             // Game server returned none which means the queue is empty
             Ok(None) => {
                 self.add_player_to_queue().await?;
+                self.is_p2 = false;
                 self.wait_for_opponent().await?
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
@@ -223,6 +227,8 @@ impl GameConnectionTrait for GameConnection {
         let opponent_player = opponent.0;
         let is_player_two = opponent.1;
 
+        self.opponent = Some(opponent_player.get_player().clone());
+
         let bytes_written = self
             .connection
             .write(&opponent_player.get_player().get_id().into_bytes())
@@ -233,7 +239,6 @@ impl GameConnectionTrait for GameConnection {
 
         self.opponent_sender = Some(opponent_player.get_channel().clone());
         self.game_state = GameState::new(is_player_two);
-        self.opponent_state = GameState::new(!is_player_two);
 
         let bytes_written = self
             .connection
@@ -258,8 +263,9 @@ impl GameConnectionTrait for GameConnection {
                 request = self.opponent_receiver.recv() =>
                 {
                     match request {
-                        Some(GameMessage::GameState(request)) => {
-                            let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
+                        Some(GameMessage::GameState(game_state)) => {
+                            self.game_state.update_board(&game_state, !self.is_p2);
+                            let bytes_written = self.connection.write(&game_state.to_request(false).0.to_be_bytes()).await?;
                             if bytes_written != 4 {
                                 return self.cleanup(Some("Failed to write data request")).await;
                             }
@@ -278,11 +284,11 @@ impl GameConnectionTrait for GameConnection {
                         Ok(4) => {
                             let request = Request(u32::from_be_bytes(buffer));
                             let new_state = GameState::from_request(request)?;
-                            if !self.game_state.validate_turn(&new_state)? {
+                            if !self.game_state.validate_board(&new_state, self.is_p2) {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
-                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(GameState::from_request(request)?)).await?;
-                            self.game_state = new_state;
+                            self.game_state.update_board(&new_state, self.is_p2);
+                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(new_state)).await?;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
                         Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {

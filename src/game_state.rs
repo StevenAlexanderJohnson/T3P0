@@ -8,6 +8,42 @@ pub struct GameState {
     p2_turn: bool,
 }
 
+impl GameState {
+    pub fn validate_board(&mut self, new_state: &GameState, is_p2: bool) -> bool {
+        let mut different = false;
+        // Validate that the board states match up. New state will only be from the perspective of the player that submitted it
+        for i in 0..9 {
+            if new_state.board[i] != 0 {
+                // Player is attempting to overwrite a spot that is already taken
+                if (self.board[i] == 1 && is_p2 && new_state.board[i] == 2)
+                    || (self.board[i] == 2 && !is_p2 && new_state.board[i] == 1)
+                {
+                    return false;
+                }
+                if self.board[i] == 0 && different {
+                    return false;
+                }
+
+                different = true;
+            }
+        }
+
+        different
+    }
+
+    pub fn update_board(&mut self, new_state: &GameState, is_p2: bool) {
+        for i in 0..9 {
+            if new_state.board[i] != 0 {
+                self.board[i] = if is_p2 { 2 } else { 1 };
+            }
+        }
+
+        self.turn = new_state.turn;
+        self.message_number = new_state.message_number;
+        self.p2_turn = new_state.p2_turn;
+    }
+}
+
 pub trait GameStateTrait {
     fn new(is_player_two: bool) -> Self;
     fn from_request(request: Request) -> Result<Self, &'static str>
@@ -126,6 +162,15 @@ impl GameStateTrait for GameState {
         output ^= (self.turn as u32) << Bits::TurnOffset as u32
             | (self.message_number as u32) << Bits::MessageNumber as u32
             | (self.p2_turn as u32) << Bits::P2Turn as u32
+            | (self.board.iter().fold(0, |acc, &x| {
+                if self.p2_turn && x == 2 {
+                    acc << 1 | 1
+                } else if !self.p2_turn && x == 1 {
+                    acc << 1 | 1
+                } else {
+                    acc << 1
+                }
+            }))
             | (self.board.iter().fold(0, |acc, &x| acc << 1 | x as u32))
             | (as_ok as u32) << Bits::MessageType as u32;
 
