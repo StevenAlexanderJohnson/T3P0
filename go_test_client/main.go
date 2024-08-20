@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -47,8 +46,4 @@ func main() {
 	}
 
 	fmt.Println("Ending session, closing connection")
-}
-
-func checkOkSignal(buffer []byte) bool {
-	return binary.BigEndian.Uint32(buffer[:4]) == 1<<31
 }

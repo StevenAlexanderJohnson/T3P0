@@ -11,6 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
+func checkOkSignal(buffer []byte) bool {
+	return binary.BigEndian.Uint32(buffer[:4]) == 1<<31
+}
+
 type Connection struct {
 	conn        net.Conn
 	playerId    *uuid.UUID
