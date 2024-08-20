@@ -10,7 +10,7 @@ use tokio::{
 use crate::{
     player::{PlayerConnection, PlayerConnectionTrait},
     request::Request,
-    DataRequest, GameRequest, GameState, GameStateTrait, Player, PlayerTrait,
+    DataRequest, GameMessage, GameServerRequest, GameState, GameStateTrait, Player, PlayerTrait,
 };
 
 /// A struct that represents a connection to a game server.
@@ -25,9 +25,9 @@ pub struct GameConnection {
     player: Player,
     connection: TcpStream,
     game_state: GameState,
-    tx: mpsc::Sender<GameRequest>,
-    opponent_sender: Option<Arc<mpsc::Sender<GameState>>>,
-    opponent_receiver: mpsc::Receiver<GameState>,
+    tx: mpsc::Sender<GameServerRequest>,
+    opponent_sender: Option<Arc<mpsc::Sender<GameMessage>>>,
+    opponent_receiver: mpsc::Receiver<GameMessage>,
 }
 
 pub trait GameConnectionTrait {
@@ -38,7 +38,7 @@ pub trait GameConnectionTrait {
     /// * `player` - The player that is connected to the server.
     /// * `connection` - The connection to the server.
     /// * `tx` - The sending channel to send requests to the main thread.
-    fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self;
+    fn new(connection: TcpStream, tx: mpsc::Sender<GameServerRequest>) -> Self;
     /// Handles the handshake between the client and the server.
     fn handshake(
         &mut self,
@@ -60,8 +60,8 @@ pub trait GameConnectionTrait {
 }
 
 impl GameConnectionTrait for GameConnection {
-    fn new(connection: TcpStream, tx: mpsc::Sender<GameRequest>) -> Self {
-        let (opponent_tx, opponent_rx) = mpsc::channel::<GameState>(5);
+    fn new(connection: TcpStream, tx: mpsc::Sender<GameServerRequest>) -> Self {
+        let (opponent_tx, opponent_rx) = mpsc::channel::<GameMessage>(5);
         let player_id = Player::new();
         GameConnection {
             connection,
@@ -128,7 +128,7 @@ impl GameConnectionTrait for GameConnection {
         // Request a user from the game state
         let (response_tx, response_rx) = oneshot::channel::<Option<PlayerConnection>>();
         self.tx
-            .send(GameRequest::GetPlayerFromQueue {
+            .send(GameServerRequest::GetPlayerFromQueue {
                 response: response_tx,
             })
             .await?;
@@ -141,12 +141,12 @@ impl GameConnectionTrait for GameConnection {
                     self.player.clone(),
                     self.opponent_sender.clone().unwrap(),
                 );
-                // Send self to the person waiting for an opponent.
-                let mut game_state =
-                    GameState::from_request(Request::new_data_request(true), self.player.clone())?;
-                game_state.set_opponent(Some(pc));
 
-                if let Err(e) = player.get_channel().send(game_state).await {
+                if let Err(e) = player
+                    .get_channel()
+                    .send(GameMessage::PlayerConnection(pc))
+                    .await
+                {
                     return self
                         .cleanup(Some(&format!("Error sending player to opponent: {:?}", e)))
                         .await;
@@ -157,7 +157,7 @@ impl GameConnectionTrait for GameConnection {
             Ok(None) => {
                 println!("No opponent found. Adding self to queue.");
                 self.tx
-                    .send(GameRequest::AddPlayerToQueue {
+                    .send(GameServerRequest::AddPlayerToQueue {
                         player_connection: PlayerConnection::new(
                             self.player.clone(),
                             self.opponent_sender.clone().unwrap(),
@@ -170,16 +170,15 @@ impl GameConnectionTrait for GameConnection {
                 loop {
                     interval.tick().await;
                     // Wait for a response from game state
-                    let response = self.opponent_receiver.try_recv();
-
-                    match response {
-                        Ok(response) => {
-                            if response.get_opponent().is_none() {
-                                return self
-                                    .cleanup(Some("Invalid response from game state"))
-                                    .await;
-                            }
-                            break (response.get_opponent().unwrap(), false);
+                    match self.opponent_receiver.try_recv() {
+                        Ok(GameMessage::PlayerConnection(pc)) => {
+                            break (pc, true);
+                        }
+                        Ok(GameMessage::GameState(_)) => {
+                            return self.cleanup(Some("Received game state while expecting player connection")).await;
+                        }
+                        Ok(GameMessage::Request(_)) => {
+                            return self.cleanup(Some("Received request while expecting player connection")).await;
                         }
                         Err(mpsc::error::TryRecvError::Empty) => {
                             self.send_heartbeat().await?;
@@ -239,18 +238,20 @@ impl GameConnectionTrait for GameConnection {
                 }
                 request = self.opponent_receiver.recv() =>
                 {
-                    println!("{:?}\n", request);
                     match request {
-                        Some(request) => {
+                        Some(GameMessage::GameState(request)) => {
                             let bytes_written = self.connection.write(&request.to_request(false).0.to_be_bytes()).await?;
                             if bytes_written != 4 {
                                 return self.cleanup(Some("Failed to write data request")).await;
                             }
                         }
+                        Some(_) => {
+                            return self.cleanup(Some("Invalid message from opponent")).await;
+                        }
                         None => {
                             return self.cleanup(Some("Opponent has left the match.")).await;
                         }
-                    };
+                    }
                 }
                 request = self.connection.read(&mut buffer) => {
                     match request {
@@ -261,7 +262,7 @@ impl GameConnectionTrait for GameConnection {
                             if !self.game_state.validate_turn(&new_state)? {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
-                            self.opponent_sender.as_ref().unwrap().send(GameState::from_request(request, self.player.clone())?).await?;
+                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(GameState::from_request(request, self.player.clone())?)).await?;
                             self.game_state = new_state;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
@@ -305,7 +306,7 @@ impl GameConnectionTrait for GameConnection {
     async fn cleanup(&mut self, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         let (response_tx, response_rx) = oneshot::channel::<()>();
         self.tx
-            .send(GameRequest::RemovePlayerFromQueue {
+            .send(GameServerRequest::RemovePlayerFromQueue {
                 player: self.player.clone(),
                 response: response_tx,
             })

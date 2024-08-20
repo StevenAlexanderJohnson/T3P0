@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum GameRequest {
+pub enum GameServerRequest {
     GetPlayerFromQueue {
         response: oneshot::Sender<Option<PlayerConnection>>,
     },
@@ -38,7 +38,7 @@ pub trait GameServerTrait {
 
     fn handle_request(
         &self,
-        game_request: GameRequest,
+        game_request: GameServerRequest,
     ) -> impl std::future::Future<Output = ()> + Send;
 }
 
@@ -66,16 +66,16 @@ impl GameServerTrait for GameServer {
         Ok(())
     }
 
-    async fn handle_request(&self, game_request: GameRequest) {
+    async fn handle_request(&self, game_request: GameServerRequest) {
         match game_request {
-            GameRequest::GetPlayerFromQueue { response } => {
+            GameServerRequest::GetPlayerFromQueue { response } => {
                 let player = self.get_player_from_queue().await;
                 let _ = response.send(player);
             }
-            GameRequest::AddPlayerToQueue { player_connection } => {
+            GameServerRequest::AddPlayerToQueue { player_connection } => {
                 let _ = self.insert_player_into_queue(player_connection).await;
             }
-            GameRequest::RemovePlayerFromQueue { player, response } => {
+            GameServerRequest::RemovePlayerFromQueue { player, response } => {
                 let mut queue = self.queue.lock().await;
                 let index = queue.iter().position(|p| p.get_player() == &player);
                 if let Some(index) = index {

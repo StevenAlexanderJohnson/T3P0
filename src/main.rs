@@ -1,6 +1,6 @@
 use t3p0::{
     game_connection::{self, GameConnectionTrait},
-    game_server, GameRequest, GameServerTrait,
+    game_server, GameServerRequest, GameServerTrait,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -11,7 +11,7 @@ use tokio::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:8000").await?;
     println!("Server listening on port 8000");
-    let (tx, mut rx) = mpsc::channel::<GameRequest>(32);
+    let (tx, mut rx) = mpsc::channel::<GameServerRequest>(32);
     let game_server = game_server::GameServer::new();
 
     // Create a thread that will manage the server state
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_connection(
     socket: TcpStream,
-    tx: mpsc::Sender<GameRequest>,
+    tx: mpsc::Sender<GameServerRequest>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut connection = game_connection::GameConnection::new(socket, tx);
     connection.handshake().await?;
