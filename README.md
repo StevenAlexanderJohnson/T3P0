@@ -1,15 +1,12 @@
 # T3P0
 
-T3P0 is short for Tic Tac Toe Protocol Version 0.
-It's purpose is to establish an application layer protocol that allows for two computers to share the state of a Tic Tac Toe game.
+T3P0 is short for Tic-Tac-Toe Protocol Version 0.
+It's purpose is to establish an application layer protocol that allows for two computers to share the state of a Tic Tac Toe game using a 32 bit payload.
 
 ## Overview
 
 T3P0 uses TCP to establish communications between computers.
 Packages are sent in binary and are unsigned 32 bit integers.
-
-
-The protocol is in early development so many of the designated bits and unsigned bits are bound to change.
 
 ## The Protocol
 
@@ -17,6 +14,7 @@ The protocol is in early development so many of the designated bits and unsigned
 
 T3P0 uses TCP as the transport layer protocol.
 This allows for consistent communication between the client and the server.
+UDP could be another possible implementation but I chose TCP to ensure that packages were delivered.
 
 ### Handshake
 
@@ -29,6 +27,9 @@ This allows for consistent communication between the client and the server.
 
 The reason why a client can request a client ID is it allows for future expansions.
 Examples would be friends or reconnecting to disconnected sessions.
+
+After the handshake the server will send the players which player they are.
+In this case player one will receive a zero value, and player two will receive 0x4000000 which all zeros but the player two bit (bit 6).
 
 ### Message Format
 
@@ -113,8 +114,7 @@ You already know your own board state.
 - **Initial State**: Connection not established
 - **Connected State**: Connection established
 - **Not Matched State**: Player is not matched with opponent and is waiting.
-- **Opponent Matched State**: Player is matched with a player.
-- **Rocker Paper Scissors**: Players play rock paper scissors to determine who goes first.
+- **Opponent Matched State**: Player is matched with a player. The player that has been waiting the longest is player one.
 - **Game State**: Players are in game.
 - **End State**: Player has disconnected or best of three is complete.
 Connection is reset and you have to reconnect to find another opponent.
