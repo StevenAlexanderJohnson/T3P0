@@ -1,11 +1,13 @@
 pub mod game_connection;
 pub mod game_server;
-pub mod game_state;
-pub mod player;
-pub mod request;
+mod game_state;
+mod message;
+mod player;
+mod player_connection;
+mod request;
 
-pub use game_connection::GameConnection;
-pub use game_server::{GameRequest, GameServer, GameServerTrait};
-pub use game_state::{GameState, GameStateTrait};
-pub use player::{Player, PlayerTrait};
-pub use request::DataRequest;
+pub use game_server::{GameServer, GameServerTrait};
+use game_state::{GameState, GameStateTrait};
+use message::GameMessage;
+use player::{Player, PlayerTrait};
+use request::DataRequest;

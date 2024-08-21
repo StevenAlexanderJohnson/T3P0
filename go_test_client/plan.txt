@@ -1,0 +1,10 @@
+We can work on a rock paper scissors system later.
+The player that joined first gets to go first.
+
+How do we know who gets to go first on the client side?
+When the players get paired they will be sent the game state.
+Player one will have a zero on the P2 bit.
+
+I don't want the UI to be blocking.
+I want the UI to update when the opponent leaves or the connection is dropped.
+That means I think we need a UI goroutine, a network goroutine, and the main thread will handle user input.
