@@ -53,6 +53,7 @@
 /// | 32 |              |
 /// |----|--------------|
 
+/// An enum that stores the bit offset for each field in the Request u32.
 #[derive(Debug)]
 #[repr(u32)]
 pub enum Bits {
@@ -62,6 +63,7 @@ pub enum Bits {
     MessageType = 31u32,
 }
 
+/// An enum that stores the number of bits that each field in the Request u32 uses.
 #[derive(Debug)]
 #[repr(u32)]
 enum Ranges {
@@ -71,17 +73,76 @@ enum Ranges {
 }
 
 pub trait DataRequest {
+    /// Creates a new u32 with formatted Ok response if chosen.
+    /// 
+    /// If `is_ok_response` is not true then it simply returns 0.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `is_ok_response` - A boolean to represent if this should be initialized as an Ok response.
+    /// 
+    /// # Returns
+    /// 
+    /// * `u32` - A response u32 with possibly initialized values.
     fn new_data_request(is_ok_response: bool) -> Self;
+
+    /// Validates the request to make sure that the turn and message number are in sync.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), &'static str>` - A result that is either an empty result or an error message.
+    ///
+    /// # Errors
+    ///
+    /// * `&'static str` - An error message that describes why the request is invalid.
     fn validate_request(&self) -> Result<(), &'static str>;
+
+    /// Gets the turn value from the u32 request.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - A u8 that represents the current turn value.
     fn get_turn(&self) -> u8;
+
+    /// Gets the current message number.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - A `u8` that holds the number of messages that have passed.
+    ///
+    /// # Notes
+    /// 
+    /// Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8;
+
+    /// Gets the board state from the u32 request.
+    ///
+    /// # Returns
+    ///
+    /// * `u16` - A u16 that represents the current board state.
+    ///
+    /// > It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
     fn get_board_state(&self) -> u16;
+
+    /// Gets whether it's the second player's turn.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - A boolean that is true if it's player 2's turn and false if it's player 1.
     fn get_is_p2_turn(&self) -> bool;
+
+    /// Checks if the response has the OK bit set.
+    /// 
+    /// # Returns
+    /// 
+    /// * `bool` - A boolean that is true if the response is an OK response.
     fn is_ok_response(&self) -> bool;
 }
 
+/// A struct that represents a request/response from the server.
 #[derive(Debug, Clone, Copy)]
 pub struct Request(pub u32);
+
 impl PartialEq for Request {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
@@ -94,16 +155,6 @@ impl PartialEq<u32> for Request {
 }
 
 impl DataRequest for Request {
-    /// Creates a new u32 with formatted Ok response if chosen.
-    /// If `is_ok_response` is not true then it simply returns 0.
-    ///
-    /// # Arguments
-    ///
-    /// * `is_ok_response` - A boolean to represent if this should be initialized as an Ok response.
-    ///
-    /// # Returns
-    ///
-    /// * `u32` - A response u32 with possibly initialized values.
     fn new_data_request(is_ok_response: bool) -> Self {
         if is_ok_response {
             return Request(1 << Bits::MessageType as u32);
@@ -111,55 +162,22 @@ impl DataRequest for Request {
         Request(0)
     }
 
-    /// Gets the turn value from the u32 request.
-    ///
-    /// # Returns
-    ///
-    /// * `u8` - A u8 that represents the current turn value.
     fn get_turn(&self) -> u8 {
         ((self.0 >> Bits::TurnOffset as u32) & ((1 << Ranges::Turn as u32) - 1)) as u8
     }
 
-    /// Gets the board state from the u32 request.
-    ///
-    /// # Returns
-    ///
-    /// * `u16` - A u16 that represents the current board state.
-    ///
-    /// > It returns as a u16 instead of a `[u8; 9]` because I wanted the possibility to keep it as an integer.
     fn get_board_state(&self) -> u16 {
         (self.0 & ((1 << Ranges::Board as u32) - 1)) as u16
     }
 
-    /// Gets whether it's the second player's turn.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - A boolean that is true if it's player 2's turn and false if it's player 1.
     fn get_is_p2_turn(&self) -> bool {
         (self.0 >> Bits::P2Turn as u32) & 1 == 1
     }
 
-    /// Gets the current message number.
-    ///
-    /// # Returns
-    ///
-    /// * `u8` - A `u8` that holds the number of messages that have passed.
-    ///
-    /// > Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8 {
         ((self.0 >> Bits::MessageNumber as u32) & ((1 << Ranges::MessageNumber as u32) - 1)) as u8
     }
 
-    /// Validates the request to make sure that the turn and message number are in sync.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), &'static str>` - A result that is either an empty result or an error message.
-    ///
-    /// # Errors
-    ///
-    /// * `&'static str` - An error message that describes why the request is invalid.
     fn validate_request(&self) -> Result<(), &'static str> {
         if self.get_message_number() > 27 {
             return Err("Trying to increment message number past maximum value.");

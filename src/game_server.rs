@@ -7,6 +7,16 @@ use crate::{
     Player,
 };
 
+/// GameServerRequest is an enum that represents the different types of requests that can be made to the GameServer.
+///
+/// # Variants
+///
+/// * GetPlayerFromQueue - Request a player from the queue.
+///   * response - A oneshot channel to send the player to.
+/// * AddPlayerToQueue - Add a player to the queue.
+///   * player_connection - The player to add to the queue.
+/// * RemovePlayerFromQueue - Remove a player from the queue.
+///   * player - The player to remove from the queue.
 #[derive(Debug)]
 pub enum GameServerRequest {
     GetPlayerFromQueue {
@@ -21,21 +31,60 @@ pub enum GameServerRequest {
     },
 }
 
+/// GameServer is a struct that represents the state of a game server.
+///
+/// # Fields
+///
+/// * queue - A Mutex wrapped Vec of PlayerConnections.
 pub struct GameServer {
     queue: Arc<Mutex<Vec<PlayerConnection>>>,
 }
 
 pub trait GameServerTrait {
+    /// Create a new GameServer.
+    ///
+    /// # Returns
+    ///
+    /// A new GameServer.
     fn new() -> Self;
 
+    /// Get a player from the queue.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to an Option<PlayerConnection>.
     fn get_player_from_queue(
         &self,
     ) -> impl std::future::Future<Output = Option<PlayerConnection>> + Send;
+
+    /// Insert a player into the queue.
+    ///
+    /// # Arguments
+    ///
+    /// * player_connection - The player to insert into the queue.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to a Result<(), Box<dyn std::error::Error + Send + Sync>>.
     fn insert_player_into_queue(
         &self,
         player_connection: PlayerConnection,
-    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
+    ) -> impl std::future::Future<Output = ()> + Send;
 
+    /// Handle a GameServerRequest.
+    ///
+    /// # Arguments
+    ///
+    /// * game_request - The request to handle.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to ().
+    ///
+    /// # Note
+    ///
+    /// This function doesn't return a value because channels should be sent within the request as a way to get values out of the GameServer.
+    /// This may change in the future.
     fn handle_request(
         &self,
         game_request: GameServerRequest,
@@ -58,12 +107,8 @@ impl GameServerTrait for GameServer {
         Some(player)
     }
 
-    async fn insert_player_into_queue(
-        &self,
-        player_connection: PlayerConnection,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn insert_player_into_queue(&self, player_connection: PlayerConnection) {
         self.queue.lock().await.push(player_connection);
-        Ok(())
     }
 
     async fn handle_request(&self, game_request: GameServerRequest) {

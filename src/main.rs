@@ -1,6 +1,7 @@
 use t3p0::{
     game_connection::{self, GameConnectionTrait},
-    game_server, GameServerRequest, GameServerTrait,
+    game_server::{self, GameServerRequest},
+    GameServerTrait,
 };
 use tokio::{
     net::{TcpListener, TcpStream},

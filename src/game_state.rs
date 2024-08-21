@@ -1,5 +1,17 @@
 use crate::request::{Bits, DataRequest, Request};
 
+/// A struct that represents the game state
+///
+/// This struct contains the board, the turn, the message number, and a boolean that represents if the player is player 2.
+/// Both players in the game will have their own copy of the game state.
+/// These two copies are not verified against each other.
+///
+/// # Fields
+///
+/// * `board` - An array of 9 u8s that represents the board. 0 is an empty space, 1 is player 1, and 2 is player 2.
+/// * `turn` - A u8 that represents the turn.
+/// * `message_number` - A u8 that represents the message number.
+/// * `p2_turn` - A boolean that represents if the player is player 2.
 #[derive(Debug, Clone)]
 pub struct GameState {
     board: [u8; 9],

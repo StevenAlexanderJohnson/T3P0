@@ -6,7 +6,7 @@ mod player;
 mod player_connection;
 mod request;
 
-pub use game_server::{GameServer, GameServerRequest, GameServerTrait};
+pub use game_server::{GameServer, GameServerTrait};
 use game_state::{GameState, GameStateTrait};
 use message::GameMessage;
 use player::{Player, PlayerTrait};

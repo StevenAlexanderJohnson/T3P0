@@ -8,9 +8,10 @@ use tokio::{
 };
 
 use crate::{
+    game_server::GameServerRequest,
     player_connection::{PlayerConnection, PlayerConnectionTrait},
     request::Request,
-    DataRequest, GameMessage, GameServerRequest, GameState, GameStateTrait, Player, PlayerTrait,
+    DataRequest, GameMessage, GameState, GameStateTrait, Player, PlayerTrait,
 };
 
 /// A struct that represents a connection to a game server.
