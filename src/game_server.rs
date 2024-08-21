@@ -133,3 +133,137 @@ impl GameServerTrait for GameServer {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::player::{Player, PlayerTrait};
+
+    #[tokio::test]
+    async fn test_new() {
+        let game_server = GameServer::new();
+        let queue = game_server.queue.lock().await;
+        assert!(queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_player_from_queue() {
+        let game_server = GameServer::new();
+        let player = Arc::new(Player::new());
+        let player_connection =
+            PlayerConnection::new(player.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        game_server
+            .insert_player_into_queue(player_connection)
+            .await;
+
+        let player_connection = game_server.get_player_from_queue().await.unwrap();
+        assert_eq!(player_connection.get_player(), &player);
+    }
+
+    #[tokio::test]
+    async fn test_get_player_from_empty_queue() {
+        let game_server = GameServer::new();
+        let player_connection = game_server.get_player_from_queue().await;
+        assert!(player_connection.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_insert_player_into_queue() {
+        let game_server = GameServer::new();
+        let player = Arc::new(Player::new());
+        let player_connection =
+            PlayerConnection::new(player.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        game_server
+            .insert_player_into_queue(player_connection)
+            .await;
+
+        let queue = game_server.queue.lock().await;
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_request() {
+        let game_server = GameServer::new();
+        let player = Arc::new(Player::new());
+        let player_connection =
+            PlayerConnection::new(player.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        game_server
+            .insert_player_into_queue(player_connection)
+            .await;
+
+        let (tx, rx) = oneshot::channel();
+        let game_request = GameServerRequest::GetPlayerFromQueue { response: tx };
+        game_server.handle_request(game_request).await;
+
+        let player_connection = rx.await.unwrap().unwrap();
+        assert_eq!(player_connection.get_player(), &player);
+    }
+
+    #[tokio::test]
+    async fn test_remove_middle_player() {
+        let game_server = GameServer::new();
+
+        let player1 = Arc::new(Player::new());
+        let player2 = Arc::new(Player::new());
+        let player3 = Arc::new(Player::new());
+
+        let player_connection1 =
+            PlayerConnection::new(player1.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        let player_connection2 =
+            PlayerConnection::new(player2.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        let player_connection3 =
+            PlayerConnection::new(player3.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+
+        game_server.insert_player_into_queue(player_connection1).await;
+        game_server.insert_player_into_queue(player_connection2).await;
+        game_server.insert_player_into_queue(player_connection3).await;
+
+        let (tx, rx) = oneshot::channel();
+
+        game_server.handle_request(GameServerRequest::RemovePlayerFromQueue {
+            player: player2.clone(),
+            response: tx,
+        }).await;
+
+        let _ = rx.await.unwrap();
+
+        let queue = game_server.queue.lock().await;
+        let player = queue.iter().find(|p| p.get_player() == &player2);
+        assert_eq!(queue.len(), 2);
+        assert!(player.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_remove_last_player() {
+        let game_server = GameServer::new();
+
+        let player1 = Arc::new(Player::new());
+        let player2 = Arc::new(Player::new());
+        let player3 = Arc::new(Player::new());
+
+        let player_connection1 =
+            PlayerConnection::new(player1.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        let player_connection2 =
+            PlayerConnection::new(player2.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+        let player_connection3 =
+            PlayerConnection::new(player3.clone(), Arc::new(tokio::sync::mpsc::channel(1).0));
+
+        game_server.insert_player_into_queue(player_connection1).await;
+        game_server.insert_player_into_queue(player_connection2).await;
+        game_server.insert_player_into_queue(player_connection3).await;
+
+        let (tx, rx) = oneshot::channel();
+
+        game_server.handle_request(GameServerRequest::RemovePlayerFromQueue {
+            player: player3.clone(),
+            response: tx,
+        }).await;
+
+        let _ = rx.await.unwrap();
+
+        let queue = game_server.queue.lock().await;
+        let player = queue.iter().find(|p| p.get_player() == &player3);
+        assert_eq!(queue.len(), 2);
+        assert!(player.is_none());
+    }
+}
