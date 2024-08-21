@@ -133,14 +133,6 @@ pub trait GameConnectionTrait {
     /// # Notes
     ///
     /// This function is normally called inside the other functions to handle errors.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// match self.get_opponent().await {
-    ///     Ok(_) => println!("Opponent found"),
-    ///     Err(e) => self.cleanup(Some(&e.to_string())).await,
-    /// }
     fn cleanup(
         &mut self,
         message: Option<&str>,
