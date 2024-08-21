@@ -10,46 +10,46 @@ pub struct GameState {
 
 pub trait GameStateTrait {
     /// Create a new GameState
-    /// 
+    ///
     /// This function requires a boolean that represents if the player is player 2.
     /// This is used to send the players what player they are after the handshake.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `is_player_two` - A boolean that represents if the player is player 2
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Self` - A new GameState
     fn new(is_player_two: bool) -> Self;
 
     /// Create a new GameState from a request
-    /// 
+    ///
     /// This function requires a request that represents the game state.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `request` - A request that represents the game state
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Result<Self, &'static str>` - A new GameState if the request is valid, Err otherwise
     fn from_request(request: Request) -> Result<Self, &'static str>
     where
         Self: Sized;
 
     /// Validate the board to see if it is a valid move
-    /// 
+    ///
     /// This function requires another game state which is the new desired game state.
     /// If the desired state of the board is not a valid move, this function will return false.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `new_state` - The new desired game state
     /// * `is_p2` - A boolean that represents if the player is player 2
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `bool` - True if the board is a valid move, false otherwise
     fn validate_board(&mut self, new_state: &GameState, is_p2: bool) -> bool;
 
@@ -73,28 +73,28 @@ pub trait GameStateTrait {
     fn validate_turn(&self, game_state: &Self) -> bool;
 
     /// Update the board to a new game state
-    /// 
+    ///
     /// This function requires a new game state that represents the new desired game state.
     /// This function will update the current game state to the new game state.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `new_state` - The new desired game state
     /// * `is_p2` - A boolean that represents if the player is player 2
     fn update_board(&mut self, new_state: &GameState, is_p2: bool);
 
     /// Convert the game state to a request.
     /// This is used to send the game state to the player over the TCP connection.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Request` - The request that represents the game state
     fn to_request(&self) -> Request;
 
     /// Returns if the current player is player 2.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `bool` - True if the current player is player 2, false otherwise
     fn is_p2_turn(&self) -> bool;
 }

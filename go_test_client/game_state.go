@@ -15,7 +15,7 @@ func NewGameState(request uint32) *GameState {
 	board := [9]uint8{}
 	board_state := request & 0b111111111
 	for i := 0; i < 9; i++ {
-		board[8-i] = uint8(board_state>>i) & 1
+		board[i] = uint8((board_state >> (8 - i))) & 1
 	}
 
 	turn_number := (request >> 27) & ((1 << 4) - 1)
@@ -47,12 +47,13 @@ func (gs *GameState) IsPlayerTwo() bool {
 }
 
 func (gs *GameState) ToRequest() uint32 {
-	request := uint32(0)
-	for i := 0; i < 9; i++ {
-		if (gs.board[i] == 1 && gs.isPlayerTwo) || (gs.board[i] == 2 && !gs.isPlayerTwo) {
-			request |= (1 << i)
+	var request uint32
+	for i, cell := range gs.board {
+		if (cell == 1 && gs.isPlayerTwo) || (cell == 2 && !gs.isPlayerTwo) {
+			request |= 1 << i
 		}
 	}
+
 	request |= uint32(gs.turnNumber) << 27
 	request |= uint32(gs.messageNumber) << 21
 	if gs.isPlayerTwo {
