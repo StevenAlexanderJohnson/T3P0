@@ -159,7 +159,14 @@ pub trait GameConnectionTrait {
 }
 
 impl GameConnection {
-    async fn send_player_info_to_opponent(
+    async fn send_message_to_opponent(&mut self, message: GameMessage) -> Result<(), Box<dyn std::error::Error>> {
+        if let Err(e) = self.opponent_sender.send(message).await {
+            return self.cleanup(Some(&format!("Error sending message to opponent: {:?}", e))).await;
+        }
+
+        Ok(())
+    }
+    async fn trade_player_info(
         &mut self,
         player: &PlayerConnection,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -194,7 +201,7 @@ impl GameConnection {
 
     async fn wait_for_opponent(
         &mut self,
-    ) -> Result<(PlayerConnection, bool), Box<dyn std::error::Error>> {
+    ) -> Result<PlayerConnection, Box<dyn std::error::Error>> {
         let mut interval = interval(Duration::from_secs(1));
 
         loop {
@@ -205,7 +212,7 @@ impl GameConnection {
                 opponent = self.opponent_receiver.recv() => {
                     match opponent {
                         Some(GameMessage::PlayerConnection(pc)) => {
-                            return Ok((pc, false));
+                            return Ok(pc);
                         }
                         Some(GameMessage::GameState(_)) => {
                             return Err("Received game state while expecting player connection".into());
@@ -296,9 +303,9 @@ impl GameConnectionTrait for GameConnection {
         let opponent = match response_rx.await {
             // Game server returned a player
             Ok(Some(player)) => {
-                self.send_player_info_to_opponent(&player).await?;
+                self.trade_player_info(&player).await?;
                 self.is_p2 = true;
-                (player, true)
+                player
             }
             // Game server returned none which means the queue is empty
             Ok(None) => {
@@ -309,13 +316,12 @@ impl GameConnectionTrait for GameConnection {
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
 
-        let opponent_player = opponent.0;
 
-        self.opponent = Some(opponent_player.get_player().clone());
+        self.opponent = Some(opponent.get_player().clone());
 
         let bytes_written = self
             .connection
-            .write(&opponent_player.get_player().get_id().into_bytes())
+            .write(&opponent.get_player().get_id().into_bytes())
             .await?;
         if bytes_written != 16 {
             return self.cleanup(Some("Failed to write opponent id")).await;
@@ -324,7 +330,7 @@ impl GameConnectionTrait for GameConnection {
         /* ### IMPORTANT ### */
         // Drop your own copy of the sender to keep only one reference to the sender Arc.
         // At this point the opponent has received the sender and is now responsible dropping it.
-        self.opponent_sender = opponent_player.get_channel().clone();
+        self.opponent_sender = opponent.get_channel().clone();
         Ok(())
     }
 
@@ -379,7 +385,7 @@ impl GameConnectionTrait for GameConnection {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
                             self.game_state.update_board(&new_state, self.is_p2);
-                            self.opponent_sender.send(GameMessage::GameState(new_state)).await?;
+                            self.send_message_to_opponent(GameMessage::GameState(new_state)).await?;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
                         Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
@@ -441,7 +447,7 @@ impl GameConnectionTrait for GameConnection {
 
         match message {
             Some(msg) => Err(msg.into()),
-            None => Ok(()),
+            None => Err("Cleanup successful".into()),
         }
     }
 }
