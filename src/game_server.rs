@@ -16,7 +16,7 @@ pub enum GameServerRequest {
         player_connection: PlayerConnection,
     },
     RemovePlayerFromQueue {
-        player: Player,
+        player: Arc<Player>,
         response: oneshot::Sender<()>,
     },
 }

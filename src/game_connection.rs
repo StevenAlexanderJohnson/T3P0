@@ -28,8 +28,8 @@ use crate::{
 /// * `opponent_receiver` - The receiving channel to receive messages from the opponent.
 /// * `is_p2` - A boolean that represents if the player is player 2.
 pub struct GameConnection {
-    player: Player,
-    opponent: Option<Player>,
+    player: Arc<Player>,
+    opponent: Option<Arc<Player>>,
     connection: TcpStream,
     game_state: GameState,
     tx: mpsc::Sender<GameServerRequest>,
@@ -296,7 +296,7 @@ impl GameConnectionTrait for GameConnection {
         GameConnection {
             connection,
             tx,
-            player: Player::new(),
+            player: Arc::new(Player::new()),
             opponent: None,
             game_state: GameState::new(false),
             opponent_sender: Arc::new(opponent_tx),
@@ -333,7 +333,7 @@ impl GameConnectionTrait for GameConnection {
                     if i == 0 {
                         return self.cleanup(Some("Invalid handshake message")).await;
                     }
-                    self.player = Player::from_bytes(&buffer);
+                    self.player = Arc::new(Player::from_bytes(&buffer));
                     let bytes_written = self
                         .connection
                         .write(&Request::new_data_request(true).0.to_be_bytes())
