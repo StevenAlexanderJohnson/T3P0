@@ -38,7 +38,8 @@ async fn handle_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut connection = game_connection::GameConnection::new(socket, tx);
     connection.handshake().await?;
-    connection.get_opponent_and_initialize_state().await?;
+    connection.get_opponent().await?;
+    connection.initialize_state().await?;
     // Event loop
     connection.handle_request().await?;
     Ok(())

@@ -41,21 +41,118 @@ pub trait GameConnectionTrait {
     /// * `connection` - The connection to the server.
     /// * `tx` - The sending channel to send requests to the main thread.
     fn new(connection: TcpStream, tx: mpsc::Sender<GameServerRequest>) -> Self;
-    /// Handles the handshake between the client and the server.
+
+    /// Performs the handshake with the client to establish a connection.
+    ///
+    /// The handshake is a two step process:
+    /// 1. The client sends a hello message to the server.
+    /// 2. The server responds with a player ID.
+    /// 3. The client responds with one of two responses:
+    ///    - If the client responds with an ok message, the server assigns the ID from step 2 to the client.
+    ///    - If the client responds with a player id, the server will assign the player number to the client and respond with OK.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    ///
+    /// # Errors
+    ///
+    /// If the client sends an invalid message or the connection is closed.
     fn handshake(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
-    fn get_opponent_and_initialize_state(
+
+    /// Gets an opponent from the game server.
+    ///
+    /// If there is an opponent in the queue, the opponent is sent to the client.
+    /// If there is no opponent in the queue, the client is added to the queue and the client waits for an opponent.
+    ///
+    /// After getting a response from the game server, the client sends the opponent ID to the client.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    fn get_opponent(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
-    /// Handles the request from the client.
+
+    /// Initializes the game state for the client.
+    ///
+    /// The game state is sent to the client.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    fn initialize_state(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+
+    /// Handles requests from the client.
+    ///
+    /// The client can send a request to the server to update the game state.
+    /// The server will validate the request and update the game state.
+    ///
+    /// The server will also send the updated game state to the opponent.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    ///
+    /// # Errors
+    ///
+    /// - If the client sends an invalid request or the connection is closed.
+    /// - If the opponent sends an invalid message or the connection is closed.
+    /// - If the opponent leaves the match.
+    /// - If the client sends an invalid heartbeat response.
     fn handle_request(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+
+    /// Cleans up the connection.
+    ///
+    /// The client is removed from the queue and the connection is closed.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - An optional message to display when cleaning up.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    ///
+    /// # Errors
+    ///
+    /// If there is an error removing the player from the queue or shutting down the connection.
+    ///
+    /// # Notes
+    ///
+    /// This function is normally called inside the other functions to handle errors.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// match self.get_opponent().await {
+    ///     Ok(_) => println!("Opponent found"),
+    ///     Err(e) => self.cleanup(Some(&e.to_string())).await,
+    /// }
     fn cleanup(
         &mut self,
         message: Option<&str>,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
+
+    /// Sends a heartbeat to the client.
+    ///
+    /// The client should respond with an ok message after receiving the heartbeat or the connection will be closed.
+    ///
+    /// # Returns
+    ///
+    /// A Result with an empty Ok or an error message.
+    ///
+    /// # Errors
+    ///
+    /// - If the client does not respond with an ok message.
+    /// - If the connection is closed.
+    /// - The client responds with an invalid message.
     fn send_heartbeat(
         &mut self,
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send;
@@ -129,11 +226,10 @@ impl GameConnection {
 impl GameConnectionTrait for GameConnection {
     fn new(connection: TcpStream, tx: mpsc::Sender<GameServerRequest>) -> Self {
         let (opponent_tx, opponent_rx) = mpsc::channel::<GameMessage>(5);
-        let player_id = Player::new();
         GameConnection {
             connection,
             tx,
-            player: player_id.clone(),
+            player: Player::new(),
             opponent: None,
             game_state: GameState::new(false),
             opponent_sender: Some(Arc::new(opponent_tx)),
@@ -145,16 +241,12 @@ impl GameConnectionTrait for GameConnection {
     async fn handshake(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut buffer = [0u8; 16];
         for i in 0..2 {
-            let n = self.connection.read(&mut buffer).await?;
-            if n == 0 {
-                return self.cleanup(Some("Handshake: Connection closed")).await;
-            }
-
             // Client should first send hello (or ok) message
             // The server will assign a player number to the client.
             // The user should then send another ok message
             // If the player instead responds with a player id, the server will assign the player number to the client.
-            match n {
+            match self.connection.read(&mut buffer).await? {
+                0 => return self.cleanup(Some("Handshake: Connection closed")).await,
                 4 => {
                     let request =
                         Request(u32::from_be_bytes(buffer[..4].try_into().unwrap_or_else(
@@ -191,9 +283,7 @@ impl GameConnectionTrait for GameConnection {
         Ok(())
     }
 
-    async fn get_opponent_and_initialize_state(
-        &mut self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn get_opponent(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Request a user from the game state
         let (response_tx, response_rx) = oneshot::channel::<Option<PlayerConnection>>();
         self.tx
@@ -218,7 +308,6 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
-
         /* ### IMPORTANT ### */
         // Drop your own copy of the sender to keep only one reference to the sender Arc.
         // At this point the opponent has received the sender and is now responsible dropping it.
@@ -238,13 +327,17 @@ impl GameConnectionTrait for GameConnection {
         }
 
         self.opponent_sender = Some(opponent_player.get_channel().clone());
-        self.game_state = GameState::new(is_player_two);
+        Ok(())
+    }
 
-        let bytes_written = self
+    async fn initialize_state(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.game_state = GameState::new(self.is_p2);
+
+        if 4 != self
             .connection
             .write(&self.game_state.to_request().0.to_be_bytes())
-            .await?;
-        if bytes_written != 4 {
+            .await?
+        {
             return self.cleanup(Some("Failed to write data request")).await;
         }
 
@@ -258,7 +351,7 @@ impl GameConnectionTrait for GameConnection {
         loop {
             tokio::select! {
                 _ = delay.tick() => {
-                    // self.send_heartbeat().await?;
+                    self.send_heartbeat().await?;
                 }
                 request = self.opponent_receiver.recv() =>
                 {
