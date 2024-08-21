@@ -31,6 +31,16 @@ Examples would be friends or reconnecting to disconnected sessions.
 After the handshake the server will send the players which player they are.
 In this case player one will receive a zero value, and player two will receive 0x4000000 which all zeros but the player two bit (bit 6).
 
+### Sending Data to the Server
+
+T3P0 is strict in the terms of what is a valid message.
+If an invalid message is received from the client the server will always terminate your connection.
+
+This is of course abusable by connecting to a player then sending an invalid message which will disconnect you and your opponent.
+Because of this it's recommended that the server keeps track of offenders and blocks them from connecting.
+
+Messages to the client should always be 32 bits with the one exception of the player handshake, which allows one 128 bit message to request a player ID.
+
 ### Message Format
 
 Messages are unsigned 32 bit integers and use big-endian bit numbering.
