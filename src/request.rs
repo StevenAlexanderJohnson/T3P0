@@ -193,7 +193,7 @@ impl DataRequest for Request {
         }
         // First clear out that set of bits then | that number plus 1
         let mut output = self.0 ^ (u32::from(turn) << Bits::TurnOffset as u32);
-        output |= ((u32::from(turn) + 1) % 9) << Bits::TurnOffset as u32;
+        output |= ((u32::from(turn) + 1) % 10) << Bits::TurnOffset as u32;
         output ^= u32::from(message_number) << Bits::MessageNumber as u32;
         output |= u32::from(message_number + 1) << Bits::MessageNumber as u32;
         output ^= 1 << Bits::P2Turn as u32;
@@ -210,11 +210,11 @@ impl DataRequest for Request {
     ///
     /// * `&'static str` - An error message that describes why the request is invalid.
     fn validate_request(&self) -> Result<(), &'static str> {
-        if self.get_message_number() >= 27 {
+        if self.get_message_number() > 27 {
             return Err("Trying to increment message number past maximum value.");
         }
 
-        if self.get_turn() >= 9 {
+        if self.get_turn() > 9 {
             return Err("Trying to increment turn number past maximum value.");
         }
 
@@ -222,7 +222,9 @@ impl DataRequest for Request {
             return Err("Message number is less than turn number.");
         }
 
-        if self.get_message_number() % 9 != self.get_turn() {
+        // Mod 10 because the message number is allowed to be 9.
+        // Turn 0 is when nobody has made a move yet, so the first move is turn 1.
+        if self.get_message_number() % 10 != self.get_turn() {
             return Err("Turn number and message number are not in sync.");
         }
 
@@ -477,7 +479,7 @@ mod tests {
                 }
             };
         }
-        assert_eq!(r.get_turn(), 0);
+        assert_eq!(r.get_turn(), 9);
     }
 
     #[test]
@@ -548,10 +550,13 @@ mod tests {
 
     #[test]
     fn validate_request_message_mod_test() {
-        let r = Request::new_data_request(false);
-        let r1 = Request(r.0 | 9 << Bits::MessageNumber as u32 | 1 << Bits::P2Turn as u32);
+        let r1 = Request(
+            9 << Bits::MessageNumber as u32
+                | 9 << Bits::TurnOffset as u32
+                | 1 << Bits::P2Turn as u32,
+        );
         assert!(r1.validate_request().is_ok());
-        let r2 = Request(r.0 | 10 << Bits::MessageNumber as u32 | 1 << Bits::TurnOffset as u32);
+        let r2 = Request(10 << Bits::MessageNumber as u32);
         assert!(r2.validate_request().is_ok());
     }
 
