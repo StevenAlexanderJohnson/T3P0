@@ -19,8 +19,14 @@ use crate::{
 /// # Fields
 ///
 /// * `player` - The player that is connected to the server.
+/// * `opponent` - The opponent that the player is playing against.
 /// * `connection` - The connection to the server.
+/// * `game_state` - The current state of the game between the two players.
+///     Perhaps this could be handled in a single GameState saved in the game_server struct.
 /// * `tx` - The sending channel to send requests to the main thread.
+/// * `opponent_sender` - The sending channel to send messages to the opponent.
+/// * `opponent_receiver` - The receiving channel to receive messages from the opponent.
+/// * `is_p2` - A boolean that represents if the player is player 2.
 pub struct GameConnection {
     player: Player,
     opponent: Option<Player>,
@@ -159,6 +165,21 @@ pub trait GameConnectionTrait {
 }
 
 impl GameConnection {
+    /// Sends a message to the opponent.
+    /// 
+    /// If there is an error sending the message, the connection is cleaned up.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `message` - The message to send to the opponent.
+    /// 
+    /// # Returns
+    /// 
+    /// A Result with an empty Ok or an error message.
+    /// 
+    /// # Errors
+    /// 
+    /// If there is an error sending the message to the opponent.
     async fn send_message_to_opponent(
         &mut self,
         message: GameMessage,
@@ -171,6 +192,27 @@ impl GameConnection {
 
         Ok(())
     }
+
+    /// Trades player information with the opponent.
+    /// 
+    /// This function send your player ID and a channel that the opponent can use to send messages to you.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `player` - The player to trade information with.
+    /// 
+    /// # Returns
+    /// 
+    /// A Result with an empty Ok or an error message.
+    /// 
+    /// # Notes
+    /// 
+    /// Generally this function is only ever called once per connection.
+    /// It is run after the handshake and before the game state is initialized.
+    /// 
+    /// # Errors
+    /// 
+    /// If there is an error sending the player to the opponent.
     async fn trade_player_info(
         &mut self,
         player: &PlayerConnection,
@@ -192,6 +234,15 @@ impl GameConnection {
         Ok(())
     }
 
+    /// Adds the player to the queue in the game_server.
+    /// 
+    /// # Returns
+    /// 
+    /// A Result with an empty Ok or an error message.
+    /// 
+    /// # Errors
+    /// 
+    /// If there is an error sending the request to the game server.
     async fn add_player_to_queue(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.tx
             .send(GameServerRequest::AddPlayerToQueue {
@@ -204,6 +255,15 @@ impl GameConnection {
         Ok(())
     }
 
+    /// Waits for an opponent to be received from the opponent receiver.
+    /// 
+    /// # Returns
+    /// 
+    /// A Result with a PlayerConnection or an error message.
+    /// 
+    /// # Errors
+    /// 
+    /// If the opponent receiver is closed before receiving an opponent.
     async fn wait_for_opponent(&mut self) -> Result<PlayerConnection, Box<dyn std::error::Error>> {
         let mut interval = interval(Duration::from_secs(1));
 
