@@ -314,7 +314,6 @@ impl GameConnectionTrait for GameConnection {
         self.opponent_sender = None;
 
         let opponent_player = opponent.0;
-        let is_player_two = opponent.1;
 
         self.opponent = Some(opponent_player.get_player().clone());
 
