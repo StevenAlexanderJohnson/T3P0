@@ -27,7 +27,7 @@ pub struct GameConnection {
     connection: TcpStream,
     game_state: GameState,
     tx: mpsc::Sender<GameServerRequest>,
-    opponent_sender: Option<Arc<mpsc::Sender<GameMessage>>>,
+    opponent_sender: Arc<mpsc::Sender<GameMessage>>,
     opponent_receiver: mpsc::Receiver<GameMessage>,
     is_p2: bool,
 }
@@ -168,7 +168,7 @@ impl GameConnection {
             .get_channel()
             .send(GameMessage::PlayerConnection(PlayerConnection::new(
                 self.player.clone(),
-                self.opponent_sender.clone().unwrap(),
+                self.opponent_sender.clone(),
             )))
             .await
         {
@@ -185,7 +185,7 @@ impl GameConnection {
             .send(GameServerRequest::AddPlayerToQueue {
                 player_connection: PlayerConnection::new(
                     self.player.clone(),
-                    self.opponent_sender.clone().unwrap(),
+                    self.opponent_sender.clone(),
                 ),
             })
             .await?;
@@ -232,7 +232,7 @@ impl GameConnectionTrait for GameConnection {
             player: Player::new(),
             opponent: None,
             game_state: GameState::new(false),
-            opponent_sender: Some(Arc::new(opponent_tx)),
+            opponent_sender: Arc::new(opponent_tx),
             opponent_receiver: opponent_rx,
             is_p2: false,
         }
@@ -308,10 +308,6 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
-        /* ### IMPORTANT ### */
-        // Drop your own copy of the sender to keep only one reference to the sender Arc.
-        // At this point the opponent has received the sender and is now responsible dropping it.
-        self.opponent_sender = None;
 
         let opponent_player = opponent.0;
 
@@ -325,7 +321,10 @@ impl GameConnectionTrait for GameConnection {
             return self.cleanup(Some("Failed to write opponent id")).await;
         }
 
-        self.opponent_sender = Some(opponent_player.get_channel().clone());
+        /* ### IMPORTANT ### */
+        // Drop your own copy of the sender to keep only one reference to the sender Arc.
+        // At this point the opponent has received the sender and is now responsible dropping it.
+        self.opponent_sender = opponent_player.get_channel().clone();
         Ok(())
     }
 
@@ -380,7 +379,7 @@ impl GameConnectionTrait for GameConnection {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
                             self.game_state.update_board(&new_state, self.is_p2);
-                            self.opponent_sender.as_ref().unwrap().send(GameMessage::GameState(new_state)).await?;
+                            self.opponent_sender.send(GameMessage::GameState(new_state)).await?;
                         },
                         Ok(_) => self.cleanup(Some("Invalid request")).await?,
                         Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => {
