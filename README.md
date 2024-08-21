@@ -3,6 +3,12 @@
 T3P0 is short for Tic-Tac-Toe Protocol Version 0.
 It's purpose is to establish an application layer protocol that allows for two computers to share the state of a Tic Tac Toe game using a 32 bit payload.
 
+## Note
+
+This project is still under development.
+The MVP is completed and you can play out a single game of tic tac toe before having to disconnect and reconnect to play another.
+The foundation is there to allow best of three matches on a single session and is the next goal.
+
 ## Overview
 
 T3P0 uses TCP to establish communications between computers.
