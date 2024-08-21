@@ -242,7 +242,7 @@ impl GameConnectionTrait for GameConnection {
 
         let bytes_written = self
             .connection
-            .write(&self.game_state.to_request(false).0.to_be_bytes())
+            .write(&self.game_state.to_request().0.to_be_bytes())
             .await?;
         if bytes_written != 4 {
             return self.cleanup(Some("Failed to write data request")).await;
@@ -265,7 +265,7 @@ impl GameConnectionTrait for GameConnection {
                     match request {
                         Some(GameMessage::GameState(game_state)) => {
                             self.game_state.update_board(&game_state, !self.is_p2);
-                            let bytes_written = self.connection.write(&game_state.to_request(false).0.to_be_bytes()).await?;
+                            let bytes_written = self.connection.write(&game_state.to_request().0.to_be_bytes()).await?;
                             if bytes_written != 4 {
                                 return self.cleanup(Some("Failed to write data request")).await;
                             }
@@ -284,7 +284,7 @@ impl GameConnectionTrait for GameConnection {
                         Ok(4) => {
                             let request = Request(u32::from_be_bytes(buffer));
                             let new_state = GameState::from_request(request)?;
-                            if !self.game_state.validate_board(&new_state, self.is_p2) {
+                            if !self.game_state.validate_board(&new_state, self.is_p2) || !self.game_state.validate_turn(&new_state) {
                                 return self.cleanup(Some("User sent an invalid request")).await;
                             }
                             self.game_state.update_board(&new_state, self.is_p2);
