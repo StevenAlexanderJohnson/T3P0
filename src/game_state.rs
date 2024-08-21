@@ -15,7 +15,7 @@ impl GameState {
 
         for i in 0..9 {
             match (self.board[i], new_state.board[i]) {
-                (0, p) if p == 1 => {
+                (0, 1) => {
                     num_changes += 1;
                     changed_index = Some(i);
                 }
@@ -25,34 +25,11 @@ impl GameState {
                 (p1, p2) if p1 != 0 && p1 != if is_p2 { 2 } else { 1 } && p2 == 1 => {
                     return false;
                 }
-                _ => {
-                    return false;
-                }
+                _ => {}
             }
-        };
+        }
 
         num_changes == 1 && changed_index.is_some() && self.board[changed_index.unwrap()] == 0
-
-        // let mut different = false;
-
-        // // Validate that the board states match up. New state will only be from the perspective of the player that submitted it
-        // for i in 0..9 {
-        //     if new_state.board[i] != 0 {
-        //         // Player is attempting to overwrite a spot that is already taken
-        //         if (self.board[i] == 1 && is_p2 && new_state.board[i] == 2)
-        //             || (self.board[i] == 2 && !is_p2 && new_state.board[i] == 1)
-        //         {
-        //             return false;
-        //         }
-        //         if self.board[i] == 0 && different {
-        //             return false;
-        //         }
-
-        //         different = true;
-        //     }
-        // }
-
-        // different
     }
 
     pub fn update_board(&mut self, new_state: &GameState, is_p2: bool) {
@@ -76,6 +53,7 @@ pub trait GameStateTrait {
     fn compare_boards(&self, other: &GameState) -> bool;
     fn validate_turn(&self, game_state: &Self) -> Result<bool, &'static str>;
     fn to_request(&self, as_ok: bool) -> Request;
+    fn is_p2_turn(&self) -> bool;
 }
 
 impl GameStateTrait for GameState {
@@ -189,8 +167,6 @@ impl GameStateTrait for GameState {
             | (self.board.iter().fold(0, |acc, &x| {
                 if self.p2_turn && x == 2 {
                     acc << 1 | 1
-                } else if !self.p2_turn && x == 1 {
-                    acc << 1 | 1
                 } else {
                     acc << 1
                 }
@@ -199,6 +175,10 @@ impl GameStateTrait for GameState {
             | (as_ok as u32) << Bits::MessageType as u32;
 
         Request(output)
+    }
+
+    fn is_p2_turn(&self) -> bool {
+        self.p2_turn
     }
 }
 
