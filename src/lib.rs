@@ -5,7 +5,6 @@ mod message;
 mod player;
 mod request;
 
-pub use game_connection::GameConnection;
 pub use game_server::{GameServer, GameServerRequest, GameServerTrait};
 use game_state::{GameState, GameStateTrait};
 use message::GameMessage;

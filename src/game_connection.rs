@@ -159,9 +159,14 @@ pub trait GameConnectionTrait {
 }
 
 impl GameConnection {
-    async fn send_message_to_opponent(&mut self, message: GameMessage) -> Result<(), Box<dyn std::error::Error>> {
+    async fn send_message_to_opponent(
+        &mut self,
+        message: GameMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = self.opponent_sender.send(message).await {
-            return self.cleanup(Some(&format!("Error sending message to opponent: {:?}", e))).await;
+            return self
+                .cleanup(Some(&format!("Error sending message to opponent: {:?}", e)))
+                .await;
         }
 
         Ok(())
@@ -199,9 +204,7 @@ impl GameConnection {
         Ok(())
     }
 
-    async fn wait_for_opponent(
-        &mut self,
-    ) -> Result<PlayerConnection, Box<dyn std::error::Error>> {
+    async fn wait_for_opponent(&mut self) -> Result<PlayerConnection, Box<dyn std::error::Error>> {
         let mut interval = interval(Duration::from_secs(1));
 
         loop {
@@ -312,7 +315,6 @@ impl GameConnectionTrait for GameConnection {
             }
             Err(_) => return self.cleanup(Some("Error getting opponent")).await,
         };
-
 
         self.opponent = Some(opponent.get_player().clone());
 
