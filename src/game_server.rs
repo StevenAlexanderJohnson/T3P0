@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
 
 use crate::{
-    player::{PlayerConnection, PlayerConnectionTrait},
+    player_connection::{PlayerConnection, PlayerConnectionTrait},
     Player,
 };
 

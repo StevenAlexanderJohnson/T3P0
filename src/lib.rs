@@ -3,6 +3,7 @@ pub mod game_server;
 mod game_state;
 mod message;
 mod player;
+mod player_connection;
 mod request;
 
 pub use game_server::{GameServer, GameServerRequest, GameServerTrait};

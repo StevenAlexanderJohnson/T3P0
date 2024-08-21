@@ -1,4 +1,4 @@
-use crate::{player::PlayerConnection, GameState};
+use crate::{player_connection::PlayerConnection, GameState};
 
 #[derive(Debug, Clone)]
 pub enum GameMessage {
