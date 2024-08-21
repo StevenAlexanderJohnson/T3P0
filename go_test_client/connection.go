@@ -193,6 +193,10 @@ func (c *Connection) MessageLoop() error {
 				panic("game state is nil")
 			}
 
+			if c.imPlayerTwo == !c.gameState.isPlayerTwo {
+				fmt.Println("It's not your turn")
+				continue
+			}
 			err = c.gameState.MakeMove(move)
 			if err != nil {
 				fmt.Println("Invalid move, please try again")
