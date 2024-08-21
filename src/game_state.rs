@@ -90,13 +90,6 @@ pub trait GameStateTrait {
     ///
     /// * `Request` - The request that represents the game state
     fn to_request(&self) -> Request;
-
-    /// Returns if the current player is player 2.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - True if the current player is player 2, false otherwise
-    fn is_p2_turn(&self) -> bool;
 }
 
 impl GameStateTrait for GameState {
@@ -193,10 +186,6 @@ impl GameStateTrait for GameState {
             | (self.board.iter().fold(0, |acc, &x| acc << 1 | x as u32));
 
         Request(output)
-    }
-
-    fn is_p2_turn(&self) -> bool {
-        self.p2_turn
     }
 }
 

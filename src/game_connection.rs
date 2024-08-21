@@ -217,9 +217,6 @@ impl GameConnection {
                         Some(GameMessage::GameState(_)) => {
                             return Err("Received game state while expecting player connection".into());
                         }
-                        Some(GameMessage::Request(_)) => {
-                            return Err("Received request while expecting player connection".into());
-                        }
                         None => {
                             return Err("Channel closed before receiving opponent".into());
                         }

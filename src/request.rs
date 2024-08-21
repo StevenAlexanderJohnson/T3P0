@@ -73,14 +73,10 @@ enum Ranges {
 pub trait DataRequest {
     fn new_data_request(is_ok_response: bool) -> Self;
     fn validate_request(&self) -> Result<(), &'static str>;
-    fn swap_player(&self) -> Self;
     fn get_turn(&self) -> u8;
     fn get_message_number(&self) -> u8;
     fn get_board_state(&self) -> u16;
     fn get_is_p2_turn(&self) -> bool;
-    fn increment_turn_and_message(&self) -> Result<Self, &'static str>
-    where
-        Self: Sized;
     fn is_ok_response(&self) -> bool;
 }
 
@@ -153,51 +149,6 @@ impl DataRequest for Request {
     /// > Messages only require 5 bits but `u8` is the smallest that fits.
     fn get_message_number(&self) -> u8 {
         ((self.0 >> Bits::MessageNumber as u32) & ((1 << Ranges::MessageNumber as u32) - 1)) as u8
-    }
-
-    /// Switches the bit that represents whose turn it is and flips the state of the board.
-    ///
-    /// # Returns
-    ///
-    /// * `u32` - A new u32 that represents the exact board state but it's flipped to the other users view.
-    fn swap_player(&self) -> Self {
-        let mut output = self.0;
-        for i in 0..Ranges::Board as usize {
-            output ^= 1 << i;
-        }
-        output ^= 1 << Bits::P2Turn as u32;
-        Request(output)
-    }
-
-    /// Increments the turn and message number by 1.
-    /// If the message number is at 27, then it will return an error.
-    /// If the turn is at 9, then it will reset the turn to 0.
-    /// If the message number is less than the turn, then it will return an error.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, &'static str>` - A result that is either the new request or an error message.
-    ///
-    /// # Errors
-    ///
-    /// * `&'static str` - An error message that describes why the request is invalid.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, &'static str>` - A result that is either the new request or an error message.
-    fn increment_turn_and_message(&self) -> Result<Self, &'static str> {
-        let turn = self.get_turn();
-        let message_number = self.get_message_number();
-        if message_number + 1 >= 27 {
-            return Err("Trying to increment message number past maximum value.");
-        }
-        // First clear out that set of bits then | that number plus 1
-        let mut output = self.0 ^ (u32::from(turn) << Bits::TurnOffset as u32);
-        output |= ((u32::from(turn) + 1) % 10) << Bits::TurnOffset as u32;
-        output ^= u32::from(message_number) << Bits::MessageNumber as u32;
-        output |= u32::from(message_number + 1) << Bits::MessageNumber as u32;
-        output ^= 1 << Bits::P2Turn as u32;
-        Ok(Request(output))
     }
 
     /// Validates the request to make sure that the turn and message number are in sync.
@@ -391,110 +342,6 @@ mod tests {
         let r = Request(0b11111 << (Bits::MessageNumber as u32 - 1));
         let message_number = r.get_message_number();
         assert_eq!(message_number, 15);
-    }
-
-    #[test]
-    fn test_swap_player() {
-        // All zeros should be all ones
-        let r = Request(0);
-        let swapped = r.swap_player();
-        assert_eq!(swapped, 0 | (1 << Bits::P2Turn as u32) | (1 << 9) - 1);
-    }
-
-    #[test]
-    fn test_swap_player_from_all_ones() {
-        // All ones should be all zeros
-        let r = Request(u32::MAX);
-        let swapped = r.swap_player();
-        assert_eq!(swapped, r.0 ^ (1 << Bits::P2Turn as u32) ^ (1 << 9) - 1);
-    }
-
-    #[test]
-    fn test_swap_player_turn_separate_from_board() {
-        // All zeros except the msb should be all zeros except the lsb
-        let r = Request(1 << Bits::P2Turn as u32);
-        let swapped = r.swap_player();
-        // If the only bit that was 1 was the player turn but, then it should be 0 and the board should be all 1s.
-        assert_eq!(swapped, (1 << Ranges::Board as u32) - 1);
-    }
-
-    #[test]
-    fn increment_turn_and_message() {
-        let r = Request::new_data_request(false);
-        let incremented = r.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        assert_eq!(
-            incremented,
-            (r.0 | 1 << Bits::MessageNumber as u32
-                | 1 << Bits::TurnOffset as u32
-                | 1 << Bits::P2Turn as u32)
-        )
-    }
-
-    #[test]
-    fn increment_turn_and_message_twice() {
-        let r = Request::new_data_request(false);
-        let incremented = r.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        let incremented = incremented.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        assert_eq!(
-            incremented,
-            (r.0 | 2 << Bits::MessageNumber as u32 | 2 << Bits::TurnOffset as u32)
-        )
-    }
-
-    #[test]
-    fn increment_turn_and_message_three_times() {
-        let r = Request::new_data_request(false);
-        let incremented = r.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        let incremented = incremented.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        let incremented = incremented.increment_turn_and_message();
-        assert!(incremented.is_ok());
-        let incremented = incremented.unwrap();
-        assert_eq!(
-            incremented,
-            (r.0 | 3 << Bits::MessageNumber as u32
-                | 3 << Bits::TurnOffset as u32
-                | 1 << Bits::P2Turn as u32)
-        )
-    }
-
-    #[test]
-    fn increment_turn_and_message_turn_reset() {
-        let mut r = Request::new_data_request(false);
-        for _ in 0..9 {
-            r = match r.increment_turn_and_message() {
-                Ok(r) => r,
-                Err(e) => {
-                    assert_eq!(e, "Trying to increment message number past maximum value.");
-                    break;
-                }
-            };
-        }
-        assert_eq!(r.get_turn(), 9);
-    }
-
-    #[test]
-    fn increment_turn_and_message_past_max_message() {
-        let mut r = Request::new_data_request(false);
-        for _ in 0..26 {
-            r = match r.increment_turn_and_message() {
-                Ok(r) => r,
-                Err(e) => {
-                    assert_eq!(e, "Trying to increment message number past maximum value.");
-                    break;
-                }
-            };
-        }
-        assert!(r.increment_turn_and_message().is_err());
     }
 
     #[test]
